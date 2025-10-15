@@ -1,0 +1,629 @@
+import SwiftUI
+import UIKit
+
+struct ContentView: View {
+    @EnvironmentObject private var prefs: PreferencesStore
+    @State private var searchText: String = ""
+    @State private var txFilter: TxFilter = .all
+    @State private var showSettings: Bool = false
+    @State private var transactions: [Transaction] = [
+        Transaction(title: "Salario", amount: 2400, date: .now.addingTimeInterval(-86400 * 3)),
+        Transaction(title: "Café", amount: -3.9, date: .now.addingTimeInterval(-86400 * 2)),
+        Transaction(title: "Supermercado", amount: -54.2, date: .now.addingTimeInterval(-86400 * 2.3)),
+        Transaction(title: "Venta artículo", amount: 120, date: .now.addingTimeInterval(-86400 * 5)),
+        Transaction(title: "Suscripción", amount: -9.99, date: .now.addingTimeInterval(-86400 * 7))
+    ]
+    @State private var activeEntryType: EntryType?
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    modeToggle
+
+                    if prefs.showFinance {
+                        financeHeader
+                        financeSummary
+                        financeQuickActions
+                        financeFilter
+                        transactionsSection
+                    } else {
+                        if !prefs.hideWelcomeCard { welcomeCard }
+                        searchBar
+                        quickActions
+                        recentSection
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 16)
+            }
+            .background(themedBackground)
+            .toolbar(.hidden, for: .navigationBar)
+        }
+        .sheet(item: $activeEntryType) { type in
+            AddTransactionView(kind: type) { tx in
+                transactions.insert(tx, at: 0)
+            }
+        }
+    }
+
+    private var header: some View {
+        HStack(alignment: .center, spacing: 16) {
+            AppLogoView(size: 56)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Deniverse")
+                    .font(.system(.title2, design: .rounded).weight(.semibold))
+                Text("Tu punto de partida")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Deniverse, tu punto de partida")
+    }
+
+    private var modeToggle: some View {
+        HStack(spacing: 12) {
+            Label(prefs.showFinance ? "Finanzas" : "Inicio", systemImage: prefs.showFinance ? "banknote" : "house")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+            Spacer()
+            Toggle("", isOn: showFinanceBinding)
+                .labelsHidden()
+                .tint(prefs.theme.accent(for: prefs.tone))
+            Button {
+                showSettings = true
+            } label: {
+                Image(systemName: "gearshape.fill")
+                    .imageScale(.medium)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Ajustes")
+            }
+            .sheet(isPresented: $showSettings) {
+                SettingsView().environmentObject(prefs)
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12).fill(appSurface))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(appStroke, lineWidth: 1)
+        )
+        .accessibilityLabel("Alternar entre inicio y finanzas")
+    }
+
+    private var searchBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("Buscar...", text: $searchText)
+                .textInputAutocapitalization(.none)
+                .autocorrectionDisabled(true)
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12).fill(appSurface))
+        .overlay(alignment: .trailing) {
+            if !searchText.isEmpty {
+                Button {
+                    withAnimation(.easeOut(duration: 0.15)) { searchText = "" }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.trailing, 10)
+                .accessibilityLabel("Limpiar búsqueda")
+            }
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(appStroke, lineWidth: 1)
+        )
+        .accessibilityLabel("Barra de búsqueda")
+    }
+
+    private var quickActions: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Acciones rápidas")
+                .font(.headline)
+            HStack(spacing: 12) {
+                ActionButton(title: "Nuevo", systemImage: "plus", tint: .blue) {}
+                ActionButton(title: "Explorar", systemImage: "safari", tint: .green) {}
+                ActionButton(title: "Ajustes", systemImage: "gear", tint: .orange) {}
+            }
+        }
+    }
+
+    private var recentSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Recientes")
+                .font(.headline)
+            VStack(spacing: 0) {
+                ForEach(filteredItems.indices, id: \.self) { index in
+                    let item = filteredItems[index]
+                    HStack(spacing: 12) {
+                        Image(systemName: item.icon)
+                            .frame(width: 28)
+                            .foregroundStyle(.primary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.title)
+                                .font(.subheadline.weight(.semibold))
+                            Text(item.subtitle)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .contentShape(Rectangle())
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(appSurface)
+                    .overlay(alignment: .bottom) {
+                        if index < filteredItems.count - 1 {
+                            Divider()
+                                .padding(.leading, 52)
+                        }
+                    }
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(appStroke, lineWidth: 1)
+            )
+        }
+    }
+
+    private var sampleItems: [RecentItem] {
+        [
+            RecentItem(icon: "doc.text", title: "Documento de bienvenida", subtitle: "Editado hace 2 h"),
+            RecentItem(icon: "bolt.fill", title: "Acción rápida", subtitle: "Automatización"),
+            RecentItem(icon: "folder", title: "Proyecto Deni", subtitle: "Actualizado ayer")
+        ]
+    }
+
+    private var filteredItems: [RecentItem] {
+        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !q.isEmpty else { return sampleItems }
+        return sampleItems.filter { item in
+            item.title.lowercased().contains(q) || item.subtitle.lowercased().contains(q)
+        }
+    }
+}
+
+// MARK: - Finanzas (Gastos e Ingresos)
+
+extension ContentView {
+    private var financeHeader: some View {
+        HStack(alignment: .center, spacing: 16) {
+            ZStack {
+                Circle()
+                    .fill(LinearGradient(colors: [.green.opacity(0.9), .teal], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .frame(width: 56, height: 56)
+                Image(systemName: "banknote")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Finanzas")
+                    .font(.system(.title2, design: .rounded).weight(.semibold))
+                Text("Gastos e ingresos")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Sección de finanzas: gastos e ingresos")
+    }
+
+    private var financeSummary: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Resumen")
+                .font(.headline)
+            HStack(spacing: 12) {
+                summaryCard(title: "Ingresos", value: incomeTotal, color: .green, systemImage: "arrow.down.circle.fill")
+                summaryCard(title: "Gastos", value: expenseTotal, color: .red, systemImage: "arrow.up.circle.fill")
+                summaryCard(title: "Balance", value: balance, color: .blue, systemImage: "equal.circle.fill")
+            }
+        }
+    }
+
+    private var financeFilter: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Filtrar")
+                .font(.headline)
+            Picker("Filtro", selection: $txFilter) {
+                ForEach(TxFilter.allCases) { f in
+                    Text(f.title).tag(f)
+                }
+            }
+            .pickerStyle(.segmented)
+        }
+    }
+
+    private func summaryCard(title: String, value: Double, color: Color, systemImage: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(title, systemImage: systemImage)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(currencyString(value))
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(color)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12).fill(appSurface))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(appStroke, lineWidth: 1)
+        )
+    }
+
+    private var financeQuickActions: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Acciones de finanzas")
+                .font(.headline)
+            HStack(spacing: 12) {
+                ActionButton(title: "Ingreso", systemImage: "plus", tint: .green) {
+                    activeEntryType = .income
+                }
+                ActionButton(title: "Gasto", systemImage: "minus", tint: .red) {
+                    activeEntryType = .expense
+                }
+                ActionButton(title: "Reportes", systemImage: "chart.pie.fill", tint: .blue) {}
+            }
+        }
+    }
+
+    private var transactionsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Transacciones")
+                .font(.headline)
+            Group {
+                if filteredTransactions.isEmpty {
+                    emptyTransactionsView
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(filteredTransactions.indices, id: \.self) { index in
+                            let tx = filteredTransactions[index]
+                            HStack(spacing: 12) {
+                            ZStack {
+                                Circle()
+                                    .fill((tx.amount < 0 ? Color.red : Color.green).opacity(0.12))
+                                    .frame(width: 32, height: 32)
+                                Image(systemName: tx.amount < 0 ? "arrow.up" : "arrow.down")
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundStyle(tx.amount < 0 ? .red : .green)
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(tx.title)
+                                    .font(.subheadline.weight(.semibold))
+                                Text(tx.dateFormatted)
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text(currencyString(tx.amount))
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(tx.amount < 0 ? .red : .green)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(appSurface)
+                        .overlay(alignment: .bottom) {
+                            if index < filteredTransactions.count - 1 {
+                                Divider()
+                                    .padding(.leading, 56)
+                            }
+                        }
+                        }
+                    }
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(appStroke, lineWidth: 1)
+            )
+        }
+    }
+
+    private var incomeTotal: Double { transactions.filter { $0.amount > 0 }.map(\.amount).reduce(0, +) }
+    private var expenseTotal: Double { abs(transactions.filter { $0.amount < 0 }.map(\.amount).reduce(0, +)) }
+    private var balance: Double { incomeTotal - expenseTotal }
+
+    private var filteredTransactions: [Transaction] {
+        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return transactions.filter { tx in
+            let matchesFilter: Bool = {
+                switch txFilter {
+                case .all: return true
+                case .income: return tx.amount > 0
+                case .expense: return tx.amount < 0
+                }
+            }()
+            let matchesSearch = q.isEmpty || tx.title.lowercased().contains(q)
+            return matchesFilter && matchesSearch
+        }
+    }
+}
+
+// MARK: - Fondo temático
+
+private extension ContentView {
+    var themedBackground: some View {
+        let colors: [Color] = {
+            switch prefs.tone {
+            case .white:
+                return [prefs.theme.color.opacity(0.45), .white]
+            case .dark:
+                return [prefs.theme.themeDarkSurface, .black.opacity(0.85)]
+            }
+        }()
+        return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+            .ignoresSafeArea()
+    }
+
+    var appSurface: Color { prefs.theme.surface(for: prefs.tone) }
+    var appStroke: Color { prefs.theme.stroke(for: prefs.tone) }
+}
+
+struct AppLogoView: View {
+    var size: CGFloat = 56
+
+    var body: some View {
+        if let uiImage = UIImage(named: "AppLogo") {
+            Image(uiImage: uiImage)
+                .resizable()
+                .scaledToFit()
+                .frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .strokeBorder(appStroke, lineWidth: 1)
+                )
+                .accessibilityHidden(true)
+        } else {
+            ZStack {
+                Circle()
+                    .fill(LinearGradient(colors: [.blue.opacity(0.9), .purple], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .frame(width: size, height: size)
+                Image(systemName: "sparkles")
+                    .font(.system(size: size * 0.39, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+            .accessibilityHidden(true)
+        }
+    }
+}
+
+struct ActionButton: View {
+    @EnvironmentObject private var prefs: PreferencesStore
+    let title: String
+    let systemImage: String
+    let tint: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: systemImage)
+                Text(title)
+            }
+            .font(.subheadline.weight(.semibold))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(prefs.theme.surface(for: prefs.tone))
+            .foregroundStyle(tint)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+    }
+}
+
+struct RecentItem: Identifiable {
+    let id = UUID()
+    let icon: String
+    let title: String
+    let subtitle: String
+}
+
+struct Transaction: Identifiable {
+    let id = UUID()
+    let title: String
+    let amount: Double // positivo ingreso, negativo gasto
+    let date: Date
+
+    var dateFormatted: String {
+        let df = DateFormatter()
+        df.dateStyle = .medium
+        return df.string(from: date)
+    }
+}
+
+// MARK: - Ingreso/Gasto: tipos y formulario
+
+enum EntryType: String, Identifiable {
+    case income
+    case expense
+    var id: String { rawValue }
+
+    var title: String { self == .income ? "Ingreso" : "Gasto" }
+    var color: Color { self == .income ? .green : .red }
+    var symbol: String { self == .income ? "arrow.down" : "arrow.up" }
+}
+
+// MARK: - Utilidades
+
+private func currencyString(_ value: Double) -> String {
+    let formatter = NumberFormatter()
+    formatter.numberStyle = .currency
+    if #available(iOS 16.0, *) {
+        formatter.currencyCode = Locale.current.currency?.identifier ?? Locale.current.currency?.identifier ?? "USD"
+    } else {
+        formatter.currencyCode = Locale.current.currencyCode ?? "USD"
+    }
+    formatter.locale = Locale.current
+    return formatter.string(from: NSNumber(value: value)) ?? String(format: "%.2f", value)
+}
+
+// MARK: - Componentes de ayuda y tipos auxiliares
+
+private extension ContentView {
+    var welcomeCard: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: "sparkles")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.blue)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Bienvenido")
+                    .font(.subheadline.weight(.semibold))
+                Text("Activa Finanzas para registrar ingresos y gastos.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Activar") { withAnimation { prefs.showFinance = true } }
+                .font(.footnote.weight(.semibold))
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12).fill(appSurface))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(appStroke, lineWidth: 1)
+        )
+        .overlay(alignment: .topTrailing) {
+            Button {
+                withAnimation { prefs.hideWelcomeCard = true }
+            } label: {
+                Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
+            }
+            .padding(8)
+            .accessibilityLabel("Ocultar tarjeta de bienvenida")
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Tarjeta de bienvenida. Activa Finanzas para registrar movimientos")
+    }
+
+    var emptyTransactionsView: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "tray")
+                .font(.title2)
+                .foregroundStyle(.secondary)
+            Text("Sin transacciones")
+                .font(.subheadline.weight(.semibold))
+            Text("Agrega tu primer movimiento para empezar")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            HStack(spacing: 12) {
+                ActionButton(title: "Ingreso", systemImage: "plus", tint: .green) { activeEntryType = .income }
+                ActionButton(title: "Gasto", systemImage: "minus", tint: .red) { activeEntryType = .expense }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .background(RoundedRectangle(cornerRadius: 12).fill(appSurface))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(appStroke, lineWidth: 1)
+        )
+    }
+}
+
+enum TxFilter: String, CaseIterable, Identifiable {
+    case all, income, expense
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .all: return "Todos"
+        case .income: return "Ingresos"
+        case .expense: return "Gastos"
+        }
+    }
+}
+
+// MARK: - Bindings para EnvironmentObject
+
+private extension ContentView {
+    var showFinanceBinding: Binding<Bool> {
+        Binding(get: { prefs.showFinance }, set: { prefs.showFinance = $0 })
+    }
+}
+
+struct AddTransactionView: View {
+    let kind: EntryType
+    let onSave: (Transaction) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var title: String = ""
+    @State private var amountText: String = ""
+    @State private var date: Date = .now
+
+    private var parsedAmount: Double? {
+        Double(amountText.replacingOccurrences(of: ",", with: "."))
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section(header: Text("Tipo")) {
+                    HStack {
+                        Image(systemName: kind.symbol)
+                            .foregroundStyle(kind.color)
+                        Text(kind.title)
+                            .foregroundStyle(kind.color)
+                            .fontWeight(.semibold)
+                    }
+                }
+                Section(header: Text("Detalle")) {
+                    TextField("Título", text: $title)
+                    TextField("Monto", text: $amountText)
+                        .keyboardType(.decimalPad)
+                    DatePicker("Fecha", selection: $date, displayedComponents: .date)
+                }
+            }
+            .navigationTitle("Nuevo \(kind.title)")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancelar") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Guardar") { save() }
+                        .disabled(!canSave)
+                }
+            }
+        }
+    }
+
+    private var canSave: Bool {
+        guard let amount = parsedAmount else { return false }
+        return !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && amount > 0
+    }
+
+    private func save() {
+        guard let amount = parsedAmount, amount > 0 else { return }
+        let signed = kind == .income ? amount : -amount
+        let tx = Transaction(title: title.trimmingCharacters(in: .whitespacesAndNewlines), amount: signed, date: date)
+        onSave(tx)
+        dismiss()
+    }
+}
+
+struct ContentView_Previews: PreviewProvider {
+    static var previews: some View {
+        Group {
+            ContentView()
+                .environmentObject(PreferencesStore())
+                .preferredColorScheme(.light)
+            ContentView()
+                .environmentObject(PreferencesStore())
+                .preferredColorScheme(.dark)
+        }
+    }
+}
