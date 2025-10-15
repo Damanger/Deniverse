@@ -19,7 +19,7 @@ Este directorio contiene un esqueleto de la vista principal para una app iOS en 
 
 ## Personalización rápida
 
-- Títulos y textos: edita los textos de `header`, `quickActions`, `recentSection` y la sección de finanzas en `ContentView.swift`.
+- Títulos y textos: edita los textos de `header`, `quickActions` y la sección de finanzas en `ContentView.swift`.
 - Acciones: conecta los `ActionButton` a la lógica deseada en los closures.
 - Estilos: ajusta colores, tipografías y separadores con los modificadores de SwiftUI.
 

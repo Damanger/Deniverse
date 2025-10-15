@@ -76,7 +76,8 @@ struct SettingsView: View {
                 }
             }
         }
-        .tint(prefs.theme.accent(for: .white))
+        // Mantén ajustes en claro, pero usa el acento del tono elegido
+        .tint(prefs.theme.accent(for: prefs.tone))
         .preferredColorScheme(.light)
     }
 }
@@ -91,22 +92,31 @@ struct SettingsView_Previews: PreviewProvider {
 
 private extension SettingsView {
     var themePreview: some View {
-        ZStack(alignment: .leading) {
-            LinearGradient(colors: [prefs.theme.color.opacity(0.55), .white.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        // La tarjeta de vista previa debe reflejar el tono seleccionado
+        let isDark = (prefs.tone == .dark)
+        let bgColors: [Color] = isDark
+            ? [prefs.theme.themeDarkSurface, .black.opacity(0.85)]
+            : [prefs.theme.color.opacity(0.55), .white.opacity(0.7)]
+
+        return ZStack(alignment: .leading) {
+            LinearGradient(colors: bgColors, startPoint: .topLeading, endPoint: .bottomTrailing)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             VStack(alignment: .leading, spacing: 8) {
                 Text("Así se verá el tema")
                     .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(isDark ? Color.white : Color.black)
                 HStack(spacing: 12) {
                     Circle().fill(prefs.theme.color).frame(width: 18, height: 18)
                     Text(prefs.theme.displayName)
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(isDark ? Color.white.opacity(0.7) : Color.black.opacity(0.55))
                 }
             }
             .padding(12)
         }
         .frame(maxWidth: .infinity, minHeight: 96)
+        // Fuerza el esquema de color solo dentro de la tarjeta
+        .preferredColorScheme(isDark ? .dark : .light)
     }
 
     // Light-looking glass for settings (igual en blanco y obscuro)

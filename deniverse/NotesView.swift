@@ -4,7 +4,6 @@ struct NotesView: View {
     @EnvironmentObject private var prefs: PreferencesStore
 
     @Binding var searchText: String
-    let filteredItems: [RecentItem]
 
     let onNew: () -> Void
     let onIncome: () -> Void
@@ -14,7 +13,6 @@ struct NotesView: View {
         VStack(alignment: .leading, spacing: 16) {
             searchBar
             quickActions
-            recentSection
         }
     }
 
@@ -52,33 +50,7 @@ struct NotesView: View {
         }
     }
 
-    private var recentSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Recientes").font(.headline)
-            VStack(spacing: 10) {
-                ForEach(filteredItems.indices, id: \.self) { index in
-                    let item = filteredItems[index]
-                    HStack(spacing: 12) {
-                        Image(systemName: item.icon)
-                            .frame(width: 28)
-                            .font(.system(size: 17, weight: .bold))
-                            .foregroundStyle(contentForeground)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(item.title).font(.subheadline.weight(.semibold))
-                            Text(item.subtitle).font(.footnote).foregroundStyle(subtleForeground)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.right").font(.footnote.weight(.bold)).foregroundStyle(subtleForeground)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 12)
-                    .background(RoundedRectangle(cornerRadius: 14).fill(appSurface))
-                    .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(appStroke, lineWidth: 1))
-                }
-            }
-            .padding(.top, 2)
-        }
-    }
+    // Se eliminó la sección de "Recientes" temporalmente
 
     // Estilo derivado del tema
     private var appSurface: Color { prefs.theme.surface(for: prefs.tone) }
@@ -86,4 +58,3 @@ struct NotesView: View {
     private var contentForeground: Color { prefs.tone == .white ? .black : .white }
     private var subtleForeground: Color { prefs.tone == .white ? .black.opacity(0.7) : .white.opacity(0.85) }
 }
-

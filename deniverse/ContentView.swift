@@ -32,7 +32,6 @@ struct ContentView: View {
                     } else {
                         NotesView(
                             searchText: $searchText,
-                            filteredItems: filteredItems,
                             onNew: {},
                             onIncome: { withAnimation { prefs.showFinance = true }; activeEntryType = .income },
                             onExpense: { withAnimation { prefs.showFinance = true }; activeEntryType = .expense }
@@ -166,58 +165,7 @@ struct ContentView: View {
         }
     }
 
-    private var recentSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Recientes")
-                .font(.headline)
-            VStack(spacing: 10) {
-                ForEach(filteredItems) { item in
-                    HStack(spacing: 12) {
-                        Image(systemName: item.icon)
-                            .frame(width: 28)
-                            .font(.system(size: 17, weight: .bold))
-                            .foregroundStyle(contentForeground)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(item.title)
-                                .font(.subheadline.weight(.semibold))
-                            Text(item.subtitle)
-                                .font(.footnote)
-                                .foregroundStyle(subtleForeground)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.footnote.weight(.bold))
-                            .foregroundStyle(subtleForeground)
-                    }
-                    .contentShape(Rectangle())
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 12)
-                    .background(RoundedRectangle(cornerRadius: 14).fill(appSurface))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14)
-                            .strokeBorder(appStroke, lineWidth: 1)
-                    )
-                }
-            }
-            .padding(.top, 2)
-        }
-    }
-
-    private var sampleItems: [RecentItem] {
-        [
-            RecentItem(icon: "doc.text", title: "Documento de bienvenida", subtitle: "Editado hace 2 h"),
-            RecentItem(icon: "bolt.fill", title: "Acción rápida", subtitle: "Automatización"),
-            RecentItem(icon: "folder", title: "Proyecto Deni", subtitle: "Actualizado ayer")
-        ]
-    }
-
-    private var filteredItems: [RecentItem] {
-        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !q.isEmpty else { return sampleItems }
-        return sampleItems.filter { item in
-            item.title.lowercased().contains(q) || item.subtitle.lowercased().contains(q)
-        }
-    }
+    // Se removió la sección de Recientes y sus datos
 }
 
 // MARK: - Finanzas (Gastos e Ingresos)
@@ -486,12 +434,7 @@ struct ActionButton: View {
     }
 }
 
-struct RecentItem: Identifiable {
-    let id = UUID()
-    let icon: String
-    let title: String
-    let subtitle: String
-}
+// Tipo RecentItem eliminado junto con la sección de Recientes
 
 struct Transaction: Identifiable {
     let id = UUID()
@@ -677,4 +620,3 @@ struct ContentView_Previews: PreviewProvider {
         }
     }
 }
-
