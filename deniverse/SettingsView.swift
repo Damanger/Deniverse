@@ -1,11 +1,9 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var prefs: PreferencesStore
 
     var body: some View {
-        NavigationStack {
             Form {
                 Section(header: Text("Vista previa")) {
                     themePreview
@@ -38,9 +36,18 @@ struct SettingsView: View {
                     )) {
                         ForEach(ThemeColor.allCases) { c in
                             HStack {
-                                Circle().fill(c.color).frame(width: 16, height: 16)
+                                let strokeColor: Color = {
+                                    if c == .white { return prefs.tone == .dark ? Color.white.opacity(0.85) : Color.black.opacity(0.18) }
+                                    if c == .black { return prefs.tone == .dark ? Color.white.opacity(0.85) : Color.black.opacity(0.5) }
+                                    return prefs.theme.stroke(for: prefs.tone)
+                                }()
+                                Circle()
+                                    .fill(c.color)
+                                    .frame(width: 16, height: 16)
+                                    .overlay(Circle().strokeBorder(strokeColor, lineWidth: 1))
                                 Text(c.displayName)
-                            }.tag(c)
+                            }
+                            .tag(c)
                         }
                     }
                 }
@@ -62,23 +69,70 @@ struct SettingsView: View {
                     ))
                 }
 
-                
-            }
-            .listStyle(.insetGrouped)
-            .scrollContentBackground(.hidden)
-            .listRowBackground(glassBG(14))
-            .foregroundStyle(.black)
-            .navigationTitle("Ajustes")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cerrar") { dismiss() }
-                        .foregroundStyle(.black)
+                Section(header: Text("Finanzas")) {
+                    HStack {
+                        Text("Límite diario de gasto")
+                        Spacer()
+                        Text(prefs.dailySpendLimit != nil ? currencyString(prefs.dailySpendLimit!) : "Sin límite")
+                            .foregroundStyle(.secondary)
+                    }
+                    HStack(spacing: 12) {
+                        Button("Sin límite") { prefs.dailySpendLimit = nil }
+                        Spacer()
+                        Stepper(value: Binding(get: { Int(prefs.dailySpendLimit ?? 0) }, set: { prefs.dailySpendLimit = Double($0) }), in: 0...100000) {
+                            Text("Ajustar: \(Int(prefs.dailySpendLimit ?? 0))")
+                        }
+                    }
                 }
-            }
+
+                Section(header: Text("Tipografía")) {
+                    Picker("Peso", selection: Binding(
+                        get: { prefs.useItalic ? 1 : 0 },
+                        set: { prefs.useItalic = ($0 == 1) }
+                    )) {
+                        Text("Normal").tag(0)
+                        Text("Cursiva").tag(1)
+                    }
+                    .pickerStyle(.segmented)
+
+                    Picker("Familia", selection: Binding(
+                        get: { prefs.fontDesign },
+                        set: { prefs.fontDesign = $0 }
+                    )) {
+                        ForEach(TypographyDesign.allCases) { d in
+                            Text(d.displayName).tag(d)
+                        }
+                    }
+                }
+
+                Section(header: Text("Salud")) {
+                    Toggle("Soy mujer", isOn: Binding(
+                        get: { prefs.isWoman },
+                        set: { prefs.isWoman = $0 }
+                    ))
+                    if prefs.isWoman {
+                        DatePicker("Último periodo", selection: Binding(
+                            get: { prefs.lastPeriodStart },
+                            set: { prefs.lastPeriodStart = $0 }
+                        ), displayedComponents: .date)
+                        Stepper(value: Binding(get: { prefs.cycleLength }, set: { prefs.cycleLength = $0 }), in: 20...40) {
+                            Text("Duración del ciclo: \(prefs.cycleLength) días")
+                        }
+                        Stepper(value: Binding(get: { prefs.periodLength }, set: { prefs.periodLength = $0 }), in: 2...10) {
+                            Text("Duración del periodo: \(prefs.periodLength) días")
+                        }
+                    }
+                }
+
         }
-        // Mantén ajustes en claro, pero usa el acento del tono elegido
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .listRowBackground(glassBG(14))
+        .foregroundStyle(prefs.tone == .dark ? .white : .black)
+        .navigationTitle("Ajustes")
+        // Usa esquema de color según Tono seleccionado
         .tint(prefs.theme.accent(for: prefs.tone))
-        .preferredColorScheme(.light)
+        .preferredColorScheme(prefs.tone == .dark ? .dark : .light)
     }
 }
 

@@ -106,6 +106,14 @@ enum ThemeTone: String, CaseIterable, Identifiable, Codable {
     var displayName: String { self == .dark ? "Obscuro" : "Blanco" }
 }
 
+enum TypographyDesign: String, CaseIterable, Identifiable, Codable {
+    case system, serif, rounded
+    var id: String { rawValue }
+    var displayName: String {
+        switch self { case .system: return "Sistema"; case .serif: return "Serif"; case .rounded: return "Redondeada" }
+    }
+}
+
 private struct PreferencesDTO: Codable {
     var showFinance: Bool
     var hideWelcomeCard: Bool
@@ -113,6 +121,13 @@ private struct PreferencesDTO: Codable {
     var preferredCurrency: String
     var notificationsEnabled: Bool
     var tone: ThemeTone
+    var isWoman: Bool
+    var lastPeriodStart: Date
+    var cycleLength: Int
+    var periodLength: Int
+    var useItalic: Bool
+    var fontDesign: TypographyDesign
+    var dailySpendLimit: Double?
 }
 
 final class PreferencesStore: ObservableObject {
@@ -122,6 +137,14 @@ final class PreferencesStore: ObservableObject {
     @Published var preferredCurrency: String { didSet { save() } }
     @Published var notificationsEnabled: Bool { didSet { save() } }
     @Published var tone: ThemeTone { didSet { save() } }
+    // Health / cycle tracking
+    @Published var isWoman: Bool { didSet { save() } }
+    @Published var lastPeriodStart: Date { didSet { save() } }
+    @Published var cycleLength: Int { didSet { save() } }
+    @Published var periodLength: Int { didSet { save() } }
+    @Published var useItalic: Bool { didSet { save() } }
+    @Published var fontDesign: TypographyDesign { didSet { save() } }
+    @Published var dailySpendLimit: Double? { didSet { save() } }
 
     private let url: URL
     private var loading = false
@@ -135,6 +158,13 @@ final class PreferencesStore: ObservableObject {
         self.preferredCurrency = Locale.current.currency?.identifier ?? Locale.current.currency?.identifier ?? "MXN"
         self.notificationsEnabled = true
         self.tone = .white
+        self.isWoman = false
+        self.lastPeriodStart = Date()
+        self.cycleLength = 28
+        self.periodLength = 5
+        self.useItalic = true
+        self.fontDesign = .serif
+        self.dailySpendLimit = nil
         load()
     }
 
@@ -149,6 +179,13 @@ final class PreferencesStore: ObservableObject {
             self.preferredCurrency = dto.preferredCurrency
             self.notificationsEnabled = dto.notificationsEnabled
             self.tone = dto.tone
+            self.isWoman = dto.isWoman
+            self.lastPeriodStart = dto.lastPeriodStart
+            self.cycleLength = dto.cycleLength
+            self.periodLength = dto.periodLength
+            self.useItalic = dto.useItalic
+            self.fontDesign = dto.fontDesign
+            self.dailySpendLimit = dto.dailySpendLimit
         }
     }
 
@@ -160,7 +197,14 @@ final class PreferencesStore: ObservableObject {
             theme: theme,
             preferredCurrency: preferredCurrency,
             notificationsEnabled: notificationsEnabled,
-            tone: tone
+            tone: tone,
+            isWoman: isWoman,
+            lastPeriodStart: lastPeriodStart,
+            cycleLength: cycleLength,
+            periodLength: periodLength,
+            useItalic: useItalic,
+            fontDesign: fontDesign,
+            dailySpendLimit: dailySpendLimit
         )
         do {
             let data = try JSONEncoder.pretty.encode(dto)

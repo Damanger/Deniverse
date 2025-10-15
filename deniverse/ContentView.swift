@@ -3,51 +3,70 @@ import UIKit
 
 struct ContentView: View {
     @EnvironmentObject private var prefs: PreferencesStore
+    @EnvironmentObject private var finance: FinanceStore
     @State private var searchText: String = ""
     @State private var txFilter: TxFilter = .all
-    @State private var showSettings: Bool = false
-    @State private var transactions: [Transaction] = [
-        Transaction(title: "Salario", amount: 2400, date: .now.addingTimeInterval(-86400 * 3)),
-        Transaction(title: "Café", amount: -3.9, date: .now.addingTimeInterval(-86400 * 2)),
-        Transaction(title: "Supermercado", amount: -54.2, date: .now.addingTimeInterval(-86400 * 2.3)),
-        Transaction(title: "Venta artículo", amount: 120, date: .now.addingTimeInterval(-86400 * 5)),
-        Transaction(title: "Suscripción", amount: -9.99, date: .now.addingTimeInterval(-86400 * 7))
-    ]
     @State private var activeEntryType: EntryType?
+    @State private var selectedTab: MainTab = .notes
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
-                    modeToggle
-
-                    if prefs.showFinance {
-                        FinanceView(
-                            txFilter: $txFilter,
-                            transactions: $transactions,
-                            onIncome: { activeEntryType = .income },
-                            onExpense: { activeEntryType = .expense },
-                            onReports: {}
-                        )
-                    } else {
-                        NotesView(
-                            searchText: $searchText,
-                            onNew: {},
-                            onIncome: { withAnimation { prefs.showFinance = true }; activeEntryType = .income },
-                            onExpense: { withAnimation { prefs.showFinance = true }; activeEntryType = .expense }
-                        )
+            Group {
+                if selectedTab == .settings {
+                    SettingsView()
+                        .environmentObject(prefs)
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 28) {
+                            switch selectedTab {
+                            case .agenda:
+                                AgendaView()
+                            case .notes:
+                                NotesView(
+                                    searchText: $searchText,
+                                    onNew: {},
+                                    onIncome: { withAnimation { selectedTab = .finance }; activeEntryType = .income },
+                                    onExpense: { withAnimation { selectedTab = .finance }; activeEntryType = .expense }
+                                )
+                            case .finance:
+                                FinanceView(
+                                    txFilter: $txFilter,
+                                    transactions: Binding(get: { finance.transactions }, set: { finance.transactions = $0 }),
+                                    onIncome: { activeEntryType = .income },
+                                    onExpense: { activeEntryType = .expense },
+                                    onReports: {}
+                                )
+                            case .settings:
+                                EmptyView() // handled above
+                            }
+                        }
+                        .padding(.horizontal)
+                        .padding(.vertical, 16)
                     }
                 }
-                .padding(.horizontal)
-                .padding(.vertical, 16)
             }
             .foregroundStyle(contentForeground)
+            .appItalic(prefs.useItalic)
+            .appFontDesign(prefs.fontDesign)
             .background(themedBackground)
-            .toolbar(.hidden, for: .navigationBar)
+            .safeAreaInset(edge: .bottom) {
+                HStack {
+                    Spacer(minLength: 0)
+                    FooterTabBar(selected: $selectedTab)
+                        .environmentObject(prefs)
+                        .frame(maxWidth: 480)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 6)
+                    Spacer(minLength: 0)
+                }
+                .background(Color.clear)
+            }
         }
         .sheet(item: $activeEntryType) { type in
             AddTransactionView(kind: type) { tx in
-                transactions.insert(tx, at: 0)
+                finance.transactions.insert(tx, at: 0)
+                // Ajusta el saldo directamente con el movimiento
+                finance.walletBalance += tx.amount
             }
         }
     }
@@ -66,55 +85,6 @@ struct ContentView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Deniverse, tu punto de partida")
-    }
-
-    private var modeToggle: some View {
-        HStack(alignment: .center, spacing: 14) {
-            // Icono circular con gradiente
-            ZStack {
-                let colors: [Color] = prefs.showFinance
-                    ? [.green.opacity(0.9), .teal]
-                    : [Color.blue.opacity(0.8), Color.purple]
-                Circle()
-                    .fill(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .frame(width: 44, height: 44)
-                Image(systemName: prefs.showFinance ? "banknote" : "note.text")
-                    .foregroundStyle(.white)
-                    .font(.system(size: 20, weight: .bold))
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(prefs.showFinance ? "Finanzas" : "Notas")
-                    .font(.title2.weight(.bold))
-                    .foregroundStyle(contentForeground)
-                Text(prefs.showFinance ? "Gastos e ingresos" : "Notas y recordatorios")
-                    .font(.footnote)
-                    .foregroundStyle(subtleForeground)
-            }
-
-            Spacer()
-            Toggle("", isOn: showFinanceBinding)
-                .labelsHidden()
-                .tint(prefs.theme.accent(for: prefs.tone))
-            Button {
-                showSettings = true
-            } label: {
-                Image(systemName: "gearshape.fill")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(subtleForeground)
-                    .accessibilityLabel("Ajustes")
-            }
-            .sheet(isPresented: $showSettings) {
-                SettingsView()
-                    .environmentObject(prefs)
-                    .environment(\.colorScheme, .light)
-                    .preferredColorScheme(.light)
-                    .presentationDetents([.large])
-                    .presentationBackground(.regularMaterial)
-            }
-        }
-        .padding(.horizontal, 4)
-        .accessibilityLabel("Alternar entre inicio y finanzas")
     }
 
     private var searchBar: some View {
@@ -154,11 +124,11 @@ struct ContentView: View {
             HStack(spacing: 12) {
                 ActionButton(title: "Nuevo", systemImage: "plus", tint: .orange, action: {}, useWhiteBackground: true)
                 ActionButton(title: "Ingreso", systemImage: "plus", tint: .green, action: {
-                    withAnimation { prefs.showFinance = true }
+                    withAnimation { selectedTab = .finance }
                     activeEntryType = .income
                 }, useWhiteBackground: true)
                 ActionButton(title: "Gasto", systemImage: "minus", tint: .red, action: {
-                    withAnimation { prefs.showFinance = true }
+                    withAnimation { selectedTab = .finance }
                     activeEntryType = .expense
                 }, useWhiteBackground: true)
             }
@@ -268,12 +238,11 @@ extension ContentView {
                                     Circle()
                                         .fill((tx.amount < 0 ? Color.red : Color.green).opacity(0.12))
                                         .frame(width: 32, height: 32)
-                                    Image(systemName: tx.amount < 0 ? "arrow.up" : "arrow.down")
-                                        .font(.subheadline.weight(.bold))
-                                        .foregroundStyle(tx.amount < 0 ? .red : .green)
+                                    Text(tx.category.emoji)
+                                        .font(.system(size: 16))
                                 }
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(tx.title)
+                                    Text("\(tx.category.emoji) \(tx.title)")
                                         .font(.subheadline.weight(.semibold))
                                     Text(tx.dateFormatted)
                                         .font(.footnote)
@@ -299,13 +268,13 @@ extension ContentView {
         }
     }
 
-    private var incomeTotal: Double { transactions.filter { $0.amount > 0 }.map(\.amount).reduce(0, +) }
-    private var expenseTotal: Double { abs(transactions.filter { $0.amount < 0 }.map(\.amount).reduce(0, +)) }
+    private var incomeTotal: Double { finance.transactions.filter { $0.amount > 0 }.map { $0.amount }.reduce(0, +) }
+    private var expenseTotal: Double { abs(finance.transactions.filter { $0.amount < 0 }.map { $0.amount }.reduce(0, +)) }
     private var balance: Double { incomeTotal - expenseTotal }
 
     private var filteredTransactions: [Transaction] {
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return transactions.filter { tx in
+        return finance.transactions.filter { tx in
             let matchesFilter: Bool = {
                 switch txFilter {
                 case .all: return true
@@ -353,6 +322,138 @@ private extension ContentView {
             RoundedRectangle(cornerRadius: corner).fill(isLightTone ? Color.black.opacity(0.10) : Color.white.opacity(0.06))
         }
     }
+}
+
+// MARK: - Footer Tab Bar
+
+enum MainTab: String, CaseIterable, Identifiable {
+    case agenda, notes, finance, settings
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .agenda: return "Agenda"
+        case .notes: return "Notas"
+        case .finance: return "Finanzas"
+        case .settings: return "Ajustes"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .agenda: return "calendar"
+        case .notes: return "note.text"
+        case .finance: return "banknote"
+        case .settings: return "gearshape.fill"
+        }
+    }
+}
+
+struct FooterTabBar: View {
+    @EnvironmentObject private var prefs: PreferencesStore
+    @Binding var selected: MainTab
+    @State private var dragIndex: CGFloat? // continuous index during drag
+
+    var body: some View {
+        GeometryReader { geo in
+            let items = MainTab.allCases
+            // Compute compact layout to avoid excessive gaps
+            let count = CGFloat(items.count)
+            let spacing: CGFloat = 12
+            let calcItem = (geo.size.width - (count - 1) * spacing) / count
+            let itemWidth: CGFloat = max(76, min(104, calcItem))
+            let itemHeight: CGFloat = 36
+            let capsuleWidth: CGFloat = itemWidth + 12
+            let contentWidth = itemWidth * count + spacing * (count - 1)
+            let originX = max(0, (geo.size.width - contentWidth) / 2)
+
+            ZStack(alignment: .leading) {
+                // Background footer container with slight blur + glass contour
+                ZStack {
+                    let isLight = (prefs.tone == .white)
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill(isLight ? .regularMaterial : .ultraThinMaterial)
+                        .opacity(0.75)
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill((isLight ? Color.white.opacity(0.06) : Color.black.opacity(0.10)))
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .stroke(
+                            LinearGradient(colors: [Color.white.opacity(isLight ? 0.45 : 0.25), prefs.theme.stroke(for: prefs.tone).opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                            lineWidth: 0.9
+                        )
+                }
+                .frame(width: contentWidth + 24, height: itemHeight + 16)
+                .position(x: geo.size.width / 2, y: geo.size.height / 2)
+                // Selector capsule (glass without blur)
+                glassCapsule
+                    .frame(width: capsuleWidth, height: itemHeight + 8)
+                    .offset(x: originX + xForCurrent(itemWidth: itemWidth, spacing: spacing) + (itemWidth - capsuleWidth) / 2,
+                            y: (geo.size.height - (itemHeight + 8)) / 2)
+
+                HStack(spacing: spacing) {
+                    ForEach(Array(items.enumerated()), id: \.offset) { _, tab in
+                        Text(tab.title.uppercased())
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            .kerning(0.6)
+                            .foregroundStyle(tab == selected ? (prefs.tone == .white ? Color.black : Color.white) : subtleForeground)
+                            .frame(width: itemWidth, height: itemHeight)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) { selected = tab }
+                            }
+                    }
+                }
+                .frame(width: contentWidth, height: itemHeight)
+                .position(x: geo.size.width / 2, y: geo.size.height / 2)
+            }
+            // Drag-to-select: update highlight live; commit on end
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        let slot = (itemWidth + spacing)
+                        let local = max(0, min(value.location.x - originX, contentWidth))
+                        let idx = local / slot
+                        withAnimation(.easeOut(duration: 0.12)) { dragIndex = idx }
+                    }
+                    .onEnded { _ in
+                        let itemsArr = items
+                        let idx = Int(round((dragIndex ?? CGFloat(itemsArr.firstIndex(of: selected) ?? 0))))
+                        let clamped = max(0, min(idx, itemsArr.count - 1))
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+                            selected = itemsArr[clamped]
+                            dragIndex = nil
+                        }
+                    }
+            )
+        }
+        .frame(height: 52)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .background(Color.clear)
+    }
+
+    // X offset for capsule origin (uses dragIndex if present)
+    private func xForCurrent(itemWidth: CGFloat, spacing: CGFloat) -> CGFloat {
+        let baseIdx: CGFloat = dragIndex ?? CGFloat(MainTab.allCases.firstIndex(of: selected) ?? 0)
+        return baseIdx * (itemWidth + spacing)
+    }
+
+    // Glass capsule style (no blur material)
+    private var glassCapsule: some View {
+        ZStack {
+            let accent = prefs.theme.accent(for: prefs.tone)
+            Capsule(style: .continuous)
+                .fill(accent.opacity(prefs.tone == .white ? 0.22 : 0.28))
+            Capsule(style: .continuous)
+                .stroke(
+                    LinearGradient(colors: [Color.white.opacity(0.65), accent.opacity(0.4)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                    lineWidth: 1
+                )
+        }
+        .shadow(color: (prefs.tone == .white ? .black.opacity(0.10) : .black.opacity(0.35)), radius: 10, y: 4)
+    }
+
+    private var subtleForeground: Color { prefs.tone == .white ? .black.opacity(0.7) : .white.opacity(0.85) }
 }
 
 struct AppLogoView: View {
@@ -436,11 +537,47 @@ struct ActionButton: View {
 
 // Tipo RecentItem eliminado junto con la sección de Recientes
 
+enum FinanceCategory: String, CaseIterable, Identifiable, Codable {
+    case salary, food, coffee, transport, shopping, health, home, fun, other
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .salary: return "Salario"
+        case .food: return "Comida"
+        case .coffee: return "Café"
+        case .transport: return "Transporte"
+        case .shopping: return "Compras"
+        case .health: return "Salud"
+        case .home: return "Hogar"
+        case .fun: return "Diversión"
+        case .other: return "Otro"
+        }
+    }
+    var emoji: String {
+        switch self {
+        case .salary: return "💼"
+        case .food: return "🍔"
+        case .coffee: return "☕️"
+        case .transport: return "🚗"
+        case .shopping: return "🛍️"
+        case .health: return "🩺"
+        case .home: return "🏠"
+        case .fun: return "🎉"
+        case .other: return "🧩"
+        }
+    }
+}
+
 struct Transaction: Identifiable {
-    let id = UUID()
+    let id: UUID
     let title: String
     let amount: Double // positivo ingreso, negativo gasto
     let date: Date
+    let category: FinanceCategory
+
+    init(id: UUID = UUID(), title: String, amount: Double, date: Date, category: FinanceCategory = .other) {
+        self.id = id; self.title = title; self.amount = amount; self.date = date; self.category = category
+    }
 
     var dateFormatted: String {
         let df = DateFormatter()
@@ -482,7 +619,7 @@ private extension ContentView {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Button("Activar") { withAnimation { prefs.showFinance = true } }
+            Button("Activar") { withAnimation { selectedTab = .finance } }
                 .font(.footnote.weight(.semibold))
         }
         .padding(12)
@@ -543,11 +680,7 @@ enum TxFilter: String, CaseIterable, Identifiable {
 
 // MARK: - Bindings para EnvironmentObject
 
-private extension ContentView {
-    var showFinanceBinding: Binding<Bool> {
-        Binding(get: { prefs.showFinance }, set: { prefs.showFinance = $0 })
-    }
-}
+private extension ContentView {}
 
 struct AddTransactionView: View {
     let kind: EntryType
@@ -557,6 +690,7 @@ struct AddTransactionView: View {
     @State private var title: String = ""
     @State private var amountText: String = ""
     @State private var date: Date = .now
+    @State private var category: FinanceCategory = .other
 
     private var parsedAmount: Double? {
         Double(amountText.replacingOccurrences(of: ",", with: "."))
@@ -580,6 +714,13 @@ struct AddTransactionView: View {
                         .keyboardType(.decimalPad)
                     DatePicker("Fecha", selection: $date, displayedComponents: .date)
                 }
+                Section(header: Text("Categoría")) {
+                    Picker("Categoría", selection: $category) {
+                        ForEach(FinanceCategory.allCases) { c in
+                            Text("\(c.emoji) \(c.title)").tag(c)
+                        }
+                    }
+                }
             }
             .navigationTitle("Nuevo \(kind.title)")
             .toolbar {
@@ -602,7 +743,7 @@ struct AddTransactionView: View {
     private func save() {
         guard let amount = parsedAmount, amount > 0 else { return }
         let signed = kind == .income ? amount : -amount
-        let tx = Transaction(title: title.trimmingCharacters(in: .whitespacesAndNewlines), amount: signed, date: date)
+        let tx = Transaction(title: title.trimmingCharacters(in: .whitespacesAndNewlines), amount: signed, date: date, category: category)
         onSave(tx)
         dismiss()
     }

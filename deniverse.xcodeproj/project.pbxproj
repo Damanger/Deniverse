@@ -7,6 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		662F711B2E9FF47D00FF63A2 /* AgendaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 662F711A2E9FF47D00FF63A2 /* AgendaView.swift */; };
+		662F711D2EA003A100FF63A2 /* AgendaStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 662F711C2EA003A100FF63A2 /* AgendaStore.swift */; };
+		662F711F2EA0087F00FF63A2 /* View+AppItalic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 662F711E2EA0087F00FF63A2 /* View+AppItalic.swift */; };
+		662F71212EA0099500FF63A2 /* View+AppTypography.swift in Sources */ = {isa = PBXBuildFile; fileRef = 662F71202EA0099500FF63A2 /* View+AppTypography.swift */; };
+		662F71232EA009A900FF63A2 /* TypographyDesign+FontDesign.swift in Sources */ = {isa = PBXBuildFile; fileRef = 662F71222EA009A900FF63A2 /* TypographyDesign+FontDesign.swift */; };
+		665679D62EA01E9A008AE20C /* FinanceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 665679D52EA01E9A008AE20C /* FinanceStore.swift */; };
+		66607A1F2EA00CA000ACEA75 /* ViewExtensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66607A1E2EA00C9F00ACEA75 /* ViewExtensions.swift */; };
 		C803D1DF2E9F6F73009048DA /* NotesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C803D1DE2E9F6F73009048DA /* NotesView.swift */; };
 		C803D1E02E9F6F73009048DA /* FinanceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C803D1DD2E9F6F73009048DA /* FinanceView.swift */; };
 		C89A1AA82E9F70AB00E445A5 /* UIUtils 2.swift in Sources */ = {isa = PBXBuildFile; fileRef = C89A1AA72E9F70AA00E445A5 /* UIUtils 2.swift */; };
@@ -18,6 +25,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		662F711A2E9FF47D00FF63A2 /* AgendaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgendaView.swift; sourceTree = "<group>"; };
+		662F711C2EA003A100FF63A2 /* AgendaStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgendaStore.swift; sourceTree = "<group>"; };
+		662F711E2EA0087F00FF63A2 /* View+AppItalic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "View+AppItalic.swift"; sourceTree = "<group>"; };
+		662F71202EA0099500FF63A2 /* View+AppTypography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "View+AppTypography.swift"; sourceTree = "<group>"; };
+		662F71222EA009A900FF63A2 /* TypographyDesign+FontDesign.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TypographyDesign+FontDesign.swift"; sourceTree = "<group>"; };
+		665679D52EA01E9A008AE20C /* FinanceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinanceStore.swift; sourceTree = "<group>"; };
+		66607A1E2EA00C9F00ACEA75 /* ViewExtensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewExtensions.swift; sourceTree = "<group>"; };
 		C803D1DD2E9F6F73009048DA /* FinanceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinanceView.swift; sourceTree = "<group>"; };
 		C803D1DE2E9F6F73009048DA /* NotesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesView.swift; sourceTree = "<group>"; };
 		C89A1AA72E9F70AA00E445A5 /* UIUtils 2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UIUtils 2.swift"; sourceTree = "<group>"; };
@@ -62,11 +76,18 @@
 			children = (
 				C89DB0012E9F24B000B9B249 /* deniverse/deniappApp.swift */,
 				C803D1DD2E9F6F73009048DA /* FinanceView.swift */,
+				662F711A2E9FF47D00FF63A2 /* AgendaView.swift */,
 				C803D1DE2E9F6F73009048DA /* NotesView.swift */,
 				C89DB0022E9F24B000B9B249 /* deniverse/ContentView.swift */,
 				C89DB0032E9F24B000B9B249 /* deniverse/SettingsView.swift */,
+				662F711C2EA003A100FF63A2 /* AgendaStore.swift */,
 				C89DB0042E9F24B000B9B249 /* deniverse/PreferencesStore.swift */,
+				66607A1E2EA00C9F00ACEA75 /* ViewExtensions.swift */,
 				C89A1AA72E9F70AA00E445A5 /* UIUtils 2.swift */,
+				662F711E2EA0087F00FF63A2 /* View+AppItalic.swift */,
+				665679D52EA01E9A008AE20C /* FinanceStore.swift */,
+				662F71202EA0099500FF63A2 /* View+AppTypography.swift */,
+				662F71222EA009A900FF63A2 /* TypographyDesign+FontDesign.swift */,
 			);
 			path = deniverse;
 			sourceTree = "<group>";
@@ -147,8 +168,15 @@
 				C89DB0072E9F24B000B9B249 /* deniverse/ContentView.swift in Sources */,
 				C803D1DF2E9F6F73009048DA /* NotesView.swift in Sources */,
 				C89A1AA82E9F70AB00E445A5 /* UIUtils 2.swift in Sources */,
+				662F71212EA0099500FF63A2 /* View+AppTypography.swift in Sources */,
+				662F711D2EA003A100FF63A2 /* AgendaStore.swift in Sources */,
 				C803D1E02E9F6F73009048DA /* FinanceView.swift in Sources */,
+				66607A1F2EA00CA000ACEA75 /* ViewExtensions.swift in Sources */,
+				662F71232EA009A900FF63A2 /* TypographyDesign+FontDesign.swift in Sources */,
+				662F711F2EA0087F00FF63A2 /* View+AppItalic.swift in Sources */,
 				C89DB0082E9F24B000B9B249 /* deniverse/SettingsView.swift in Sources */,
+				662F711B2E9FF47D00FF63A2 /* AgendaView.swift in Sources */,
+				665679D62EA01E9A008AE20C /* FinanceStore.swift in Sources */,
 				C89DB0092E9F24B000B9B249 /* deniverse/PreferencesStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
