@@ -29,17 +29,9 @@ struct SettingsView: View {
                         Text("Deniverse")
                             .foregroundStyle(.secondary)
                     }
-                    Toggle("Mostrar tarjeta de bienvenida", isOn: Binding(
-                        get: { !prefs.hideWelcomeCard },
-                        set: { prefs.hideWelcomeCard = !$0 }
-                    ))
-                    Toggle("Modo Finanzas activo", isOn: Binding(
-                        get: { prefs.showFinance },
-                        set: { prefs.showFinance = $0 }
-                    ))
                 }
 
-                Section(header: Text("Tema"), footer: Text("Se guarda en JSON para recordar tu preferencia.")) {
+                Section(header: Text("Tema")) {
                     Picker("Color de tema", selection: Binding(
                         get: { prefs.theme },
                         set: { prefs.theme = $0 }
@@ -70,17 +62,22 @@ struct SettingsView: View {
                     ))
                 }
 
-                Section(footer: Text("Estos ajustes afectan solo esta sesión de demostración.")) {
-                    EmptyView()
-                }
+                
             }
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+            .listRowBackground(glassBG(14))
+            .foregroundStyle(.black)
             .navigationTitle("Ajustes")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cerrar") { dismiss() }
+                        .foregroundStyle(.black)
                 }
             }
         }
+        .tint(prefs.theme.accent(for: .white))
+        .preferredColorScheme(.light)
     }
 }
 
@@ -95,15 +92,7 @@ struct SettingsView_Previews: PreviewProvider {
 private extension SettingsView {
     var themePreview: some View {
         ZStack(alignment: .leading) {
-            let bgColors: [Color] = {
-                switch prefs.tone {
-                case .white:
-                    return [prefs.theme.color.opacity(0.55), .white.opacity(0.7)]
-                case .dark:
-                    return [prefs.theme.themeDarkSurface.opacity(0.9), .black.opacity(0.85)]
-                }
-            }()
-            LinearGradient(colors: bgColors, startPoint: .topLeading, endPoint: .bottomTrailing)
+            LinearGradient(colors: [prefs.theme.color.opacity(0.55), .white.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             VStack(alignment: .leading, spacing: 8) {
                 Text("Así se verá el tema")
@@ -118,5 +107,13 @@ private extension SettingsView {
             .padding(12)
         }
         .frame(maxWidth: .infinity, minHeight: 96)
+    }
+
+    // Light-looking glass for settings (igual en blanco y obscuro)
+    func glassBG(_ corner: CGFloat = 12) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: corner).fill(.regularMaterial)
+            RoundedRectangle(cornerRadius: corner).fill(Color.black.opacity(0.10))
+        }
     }
 }

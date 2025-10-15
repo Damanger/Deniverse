@@ -3,7 +3,7 @@ import SwiftUI
 import Combine
 
 enum ThemeColor: String, CaseIterable, Identifiable, Codable {
-    case mint, peach, lavender, sky, lime, coral, rose
+    case mint, peach, lavender, sky, lime, coral, rose, yellow, red, white, black
 
     var id: String { rawValue }
 
@@ -16,6 +16,10 @@ enum ThemeColor: String, CaseIterable, Identifiable, Codable {
         case .lime: return "Lima"
         case .coral: return "Coral"
         case .rose: return "Rosa"
+        case .yellow: return "Amarillo"
+        case .red: return "Rojo"
+        case .white: return "Blanco"
+        case .black: return "Negro"
         }
     }
 
@@ -28,6 +32,10 @@ enum ThemeColor: String, CaseIterable, Identifiable, Codable {
         case .lime: return Color(red: 0.82, green: 0.92, blue: 0.68)
         case .coral: return Color(red: 1.00, green: 0.76, blue: 0.73)
         case .rose: return Color(red: 1.00, green: 0.78, blue: 0.86)
+        case .yellow: return Color(red: 1.00, green: 0.94, blue: 0.60)
+        case .red: return Color(red: 0.98, green: 0.66, blue: 0.66)
+        case .white: return .white
+        case .black: return .black
         }
     }
 
@@ -40,6 +48,10 @@ enum ThemeColor: String, CaseIterable, Identifiable, Codable {
         case .lime: return (0.82, 0.92, 0.68)
         case .coral: return (1.00, 0.76, 0.73)
         case .rose: return (1.00, 0.78, 0.86)
+        case .yellow: return (1.00, 0.94, 0.60)
+        case .red: return (0.98, 0.66, 0.66)
+        case .white: return (1.00, 1.00, 1.00)
+        case .black: return (0.00, 0.00, 0.00)
         }
     }
 
@@ -51,23 +63,37 @@ enum ThemeColor: String, CaseIterable, Identifiable, Codable {
 
     // Accents and surfaces derived from the base pastel
     func accent(for tone: ThemeTone) -> Color {
-        switch tone {
-        case .white: return darken(0.25)
-        case .dark:  return darken(0.40)
+        switch (self, tone) {
+        case (.white, .white): return Color.gray
+        case (.white, .dark):  return .white
+        case (.black, .dark):  return .white
+        case (.black, .white): return .black
+        case (_, .white):      return darken(0.25)
+        case (_, .dark):       return darken(0.40)
         }
     }
 
     func surface(for tone: ThemeTone) -> Color {
-        switch tone {
-        case .white: return darken(0.30)
-        case .dark:  return darken(0.55)
+        switch (self, tone) {
+        // Neutros aún más claros
+        case (.white, .white): return Color(white: 0.98)
+        case (.white, .dark):  return Color(white: 0.20)
+        case (.black, .white): return Color(white: 0.95)
+        case (.black, .dark):  return Color(white: 0.18)
+        // Pasteles: aclara más la superficie para mejorar legibilidad
+        case (_, .white):      return darken(0.07)
+        case (_, .dark):       return darken(0.25)
         }
     }
 
     func stroke(for tone: ThemeTone) -> Color {
-        switch tone {
-        case .white: return darken(0.45).opacity(0.28)
-        case .dark:  return darken(0.75).opacity(0.35)
+        switch (self, tone) {
+        case (.white, .white): return Color.gray.opacity(0.14)
+        case (.white, .dark):  return Color.white.opacity(0.18)
+        case (.black, .white): return Color.black.opacity(0.14)
+        case (.black, .dark):  return Color.white.opacity(0.20)
+        case (_, .white):      return darken(0.25).opacity(0.18)
+        case (_, .dark):       return darken(0.45).opacity(0.24)
         }
     }
 

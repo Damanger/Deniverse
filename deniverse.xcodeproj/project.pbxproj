@@ -6,22 +6,28 @@
 	objectVersion = 77;
 	objects = {
 
-/* Begin PBXFileReference section */
-		C89DAC082E9F236100B9B249 /* Deniverse.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Deniverse.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		C89DB0012E9F24B000B9B249 /* deniappApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = deniverse/deniappApp.swift; sourceTree = SOURCE_ROOT; };
-		C89DB0022E9F24B000B9B249 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = deniverse/ContentView.swift; sourceTree = SOURCE_ROOT; };
-		C89DB0032E9F24B000B9B249 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = deniverse/SettingsView.swift; sourceTree = SOURCE_ROOT; };
-		C89DB0042E9F24B000B9B249 /* PreferencesStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = deniverse/PreferencesStore.swift; sourceTree = SOURCE_ROOT; };
-		C89DB0052E9F24B000B9B249 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = deniverse/Assets.xcassets; sourceTree = SOURCE_ROOT; };
-/* End PBXFileReference section */
+/* Begin PBXBuildFile section */
+		C803D1DF2E9F6F73009048DA /* NotesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C803D1DE2E9F6F73009048DA /* NotesView.swift */; };
+		C803D1E02E9F6F73009048DA /* FinanceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C803D1DD2E9F6F73009048DA /* FinanceView.swift */; };
+		C89A1AA82E9F70AB00E445A5 /* UIUtils 2.swift in Sources */ = {isa = PBXBuildFile; fileRef = C89A1AA72E9F70AA00E445A5 /* UIUtils 2.swift */; };
+		C89DB0062E9F24B000B9B249 /* deniverse/deniappApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C89DB0012E9F24B000B9B249 /* deniverse/deniappApp.swift */; };
+		C89DB0072E9F24B000B9B249 /* deniverse/ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C89DB0022E9F24B000B9B249 /* deniverse/ContentView.swift */; };
+		C89DB0082E9F24B000B9B249 /* deniverse/SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C89DB0032E9F24B000B9B249 /* deniverse/SettingsView.swift */; };
+		C89DB0092E9F24B000B9B249 /* deniverse/PreferencesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C89DB0042E9F24B000B9B249 /* deniverse/PreferencesStore.swift */; };
+		C89DB00A2E9F24B000B9B249 /* deniverse/Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C89DB0052E9F24B000B9B249 /* deniverse/Assets.xcassets */; };
+/* End PBXBuildFile section */
 
-/* Begin PBXFileSystemSynchronizedRootGroup section */
-		C89DAC0A2E9F236100B9B249 /* Sources */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = deniverse;
-			sourceTree = "<group>";
-		};
-/* End PBXFileSystemSynchronizedRootGroup section */
+/* Begin PBXFileReference section */
+		C803D1DD2E9F6F73009048DA /* FinanceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinanceView.swift; sourceTree = "<group>"; };
+		C803D1DE2E9F6F73009048DA /* NotesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesView.swift; sourceTree = "<group>"; };
+		C89A1AA72E9F70AA00E445A5 /* UIUtils 2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UIUtils 2.swift"; sourceTree = "<group>"; };
+		C89DAC082E9F236100B9B249 /* Deniverse.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Deniverse.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C89DB0012E9F24B000B9B249 /* deniverse/deniappApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = deniverse/deniappApp.swift; sourceTree = SOURCE_ROOT; };
+		C89DB0022E9F24B000B9B249 /* deniverse/ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = deniverse/ContentView.swift; sourceTree = SOURCE_ROOT; };
+		C89DB0032E9F24B000B9B249 /* deniverse/SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = deniverse/SettingsView.swift; sourceTree = SOURCE_ROOT; };
+		C89DB0042E9F24B000B9B249 /* deniverse/PreferencesStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = deniverse/PreferencesStore.swift; sourceTree = SOURCE_ROOT; };
+		C89DB0052E9F24B000B9B249 /* deniverse/Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = deniverse/Assets.xcassets; sourceTree = SOURCE_ROOT; };
+/* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		C89DAC052E9F236100B9B249 /* Frameworks */ = {
@@ -37,8 +43,8 @@
 		C89DABFF2E9F236100B9B249 = {
 			isa = PBXGroup;
 			children = (
-				C89DAC0A2E9F236100B9B249 /* Sources */,
-				C89DB0052E9F24B000B9B249 /* Assets.xcassets */,
+				C89DAC0A2E9F236100B9B249 /* deniverse */,
+				C89DB0052E9F24B000B9B249 /* deniverse/Assets.xcassets */,
 				C89DAC092E9F236100B9B249 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -51,15 +57,20 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-/* End PBXGroup section */
-
-/* Begin PBXBuildFile section */
-		C89DB0062E9F24B000B9B249 /* deniappApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C89DB0012E9F24B000B9B249 /* deniappApp.swift */; };
-		C89DB0072E9F24B000B9B249 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C89DB0022E9F24B000B9B249 /* ContentView.swift */; };
-		C89DB0082E9F24B000B9B249 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C89DB0032E9F24B000B9B249 /* SettingsView.swift */; };
-		C89DB0092E9F24B000B9B249 /* PreferencesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C89DB0042E9F24B000B9B249 /* PreferencesStore.swift */; };
-		C89DB00A2E9F24B000B9B249 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C89DB0052E9F24B000B9B249 /* Assets.xcassets */; };
-/* End PBXBuildFile section */
+		C89DAC0A2E9F236100B9B249 /* deniverse */ = {
+			isa = PBXGroup;
+			children = (
+				C89DB0012E9F24B000B9B249 /* deniverse/deniappApp.swift */,
+				C803D1DD2E9F6F73009048DA /* FinanceView.swift */,
+				C803D1DE2E9F6F73009048DA /* NotesView.swift */,
+				C89DB0022E9F24B000B9B249 /* deniverse/ContentView.swift */,
+				C89DB0032E9F24B000B9B249 /* deniverse/SettingsView.swift */,
+				C89DB0042E9F24B000B9B249 /* deniverse/PreferencesStore.swift */,
+				C89A1AA72E9F70AA00E445A5 /* UIUtils 2.swift */,
+			);
+			path = deniverse;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -74,9 +85,6 @@
 			buildRules = (
 			);
 			dependencies = (
-			);
-			fileSystemSynchronizedGroups = (
-				C89DAC0A2E9F236100B9B249 /* Sources */,
 			);
 			name = Deniverse;
 			packageProductDependencies = (
@@ -100,7 +108,7 @@
 					};
 				};
 			};
-			buildConfigurationList = C89DAC032E9F236100B9B249 /* Build configuration list for PBXProject "Deniverse" */;
+			buildConfigurationList = C89DAC032E9F236100B9B249 /* Build configuration list for PBXProject "deniverse" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -113,9 +121,9 @@
 			productRefGroup = C89DAC092E9F236100B9B249 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
-				targets = (
-					C89DAC072E9F236100B9B249 /* Deniverse */,
-				);
+			targets = (
+				C89DAC072E9F236100B9B249 /* Deniverse */,
+			);
 		};
 /* End PBXProject section */
 
@@ -124,7 +132,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C89DB00A2E9F24B000B9B249 /* Assets.xcassets in Resources */,
+				C89DB00A2E9F24B000B9B249 /* deniverse/Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -135,10 +143,13 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C89DB0062E9F24B000B9B249 /* deniappApp.swift in Sources */,
-				C89DB0072E9F24B000B9B249 /* ContentView.swift in Sources */,
-				C89DB0082E9F24B000B9B249 /* SettingsView.swift in Sources */,
-				C89DB0092E9F24B000B9B249 /* PreferencesStore.swift in Sources */,
+				C89DB0062E9F24B000B9B249 /* deniverse/deniappApp.swift in Sources */,
+				C89DB0072E9F24B000B9B249 /* deniverse/ContentView.swift in Sources */,
+				C803D1DF2E9F6F73009048DA /* NotesView.swift in Sources */,
+				C89A1AA82E9F70AB00E445A5 /* UIUtils 2.swift in Sources */,
+				C803D1E02E9F6F73009048DA /* FinanceView.swift in Sources */,
+				C89DB0082E9F24B000B9B249 /* deniverse/SettingsView.swift in Sources */,
+				C89DB0092E9F24B000B9B249 /* deniverse/PreferencesStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -286,9 +297,9 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-            		MARKETING_VERSION = 1.0;
-            		PRODUCT_BUNDLE_IDENTIFIER = app.deniverse;
-            		PRODUCT_NAME = "$(TARGET_NAME)";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.deniverse;
+				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -319,9 +330,9 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-            		MARKETING_VERSION = 1.0;
-            		PRODUCT_BUNDLE_IDENTIFIER = app.deniverse;
-            		PRODUCT_NAME = "$(TARGET_NAME)";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.deniverse;
+				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -335,7 +346,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		C89DAC032E9F236100B9B249 /* Build configuration list for PBXProject "Deniverse" */ = {
+		C89DAC032E9F236100B9B249 /* Build configuration list for PBXProject "deniverse" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				C89DAC112E9F236100B9B249 /* Debug */,

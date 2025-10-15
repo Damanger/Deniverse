@@ -9,6 +9,7 @@ struct DeniApp: App {
             ContentView()
                 .environmentObject(prefs)
                 .tint(prefs.theme.accent(for: prefs.tone))
+                .preferredColorScheme(prefs.tone == .dark ? .dark : .light)
         }
     }
 }
