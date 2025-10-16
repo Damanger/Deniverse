@@ -2,6 +2,8 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject private var prefs: PreferencesStore
+    @State private var limitText: String = ""
+    @FocusState private var limitFocused: Bool
 
     var body: some View {
             Form {
@@ -27,6 +29,18 @@ struct SettingsView: View {
                         Text("Deniverse")
                             .foregroundStyle(.secondary)
                     }
+                }
+
+                Section(header: Text("Agenda")) {
+                    Stepper(value: Binding(get: { prefs.agendaStartHour }, set: { prefs.agendaStartHour = max(0, min($0, prefs.agendaEndHour)) }), in: 0...23) {
+                        Text("Hora inicio: \(String(format: "%02d:00", prefs.agendaStartHour))")
+                    }
+                    Stepper(value: Binding(get: { prefs.agendaEndHour }, set: { prefs.agendaEndHour = max(prefs.agendaStartHour, min($0, 23)) }), in: 0...23) {
+                        Text("Hora fin: \(String(format: "%02d:00", prefs.agendaEndHour))")
+                    }
+                    Text("Se aplicará a todos los días en Agenda (vista semanal)")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
 
                 Section(header: Text("Tema")) {
@@ -70,17 +84,49 @@ struct SettingsView: View {
                 }
 
                 Section(header: Text("Finanzas")) {
-                    HStack {
-                        Text("Límite diario de gasto")
-                        Spacer()
-                        Text(prefs.dailySpendLimit != nil ? currencyString(prefs.dailySpendLimit!) : "Sin límite")
-                            .foregroundStyle(.secondary)
-                    }
-                    HStack(spacing: 12) {
-                        Button("Sin límite") { prefs.dailySpendLimit = nil }
-                        Spacer()
-                        Stepper(value: Binding(get: { Int(prefs.dailySpendLimit ?? 0) }, set: { prefs.dailySpendLimit = Double($0) }), in: 0...100000) {
-                            Text("Ajustar: \(Int(prefs.dailySpendLimit ?? 0))")
+                    Toggle("Activar límite diario", isOn: Binding(
+                        get: { prefs.dailySpendLimit != nil },
+                        set: { isOn in
+                            if isOn {
+                                // Si estaba en nil, inicia en 0
+                                if prefs.dailySpendLimit == nil {
+                                    prefs.dailySpendLimit = 0
+                                    limitText = "0"
+                                }
+                            } else {
+                                prefs.dailySpendLimit = nil
+                                limitText = ""
+                            }
+                        }
+                    ))
+                    if prefs.dailySpendLimit != nil {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Límite diario de gasto")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            TextField("Monto", text: $limitText)
+                                .keyboardType(.decimalPad)
+                                .focused($limitFocused)
+                                .onChange(of: limitText) { _, newVal in
+                                    let cleaned = newVal
+                                        .replacingOccurrences(of: ",", with: ".")
+                                        .filter { "0123456789.".contains($0) }
+                                    if cleaned != newVal { limitText = cleaned }
+                                    if let v = Double(cleaned) {
+                                        prefs.dailySpendLimit = max(0, v)
+                                    }
+                                }
+                            if let v = prefs.dailySpendLimit {
+                                Text(prefs.currencyString(v))
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    } else {
+                        HStack {
+                            Text("Límite diario de gasto")
+                            Spacer()
+                            Text("Sin límite").foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -125,6 +171,7 @@ struct SettingsView: View {
                 }
 
         }
+        .scrollDismissesKeyboard(.interactively)
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .listRowBackground(glassBG(14))
@@ -133,6 +180,17 @@ struct SettingsView: View {
         // Usa esquema de color según Tono seleccionado
         .tint(prefs.theme.accent(for: prefs.tone))
         .preferredColorScheme(prefs.tone == .dark ? .dark : .light)
+        .onAppear {
+            if let v = prefs.dailySpendLimit { limitText = String(format: "%.2f", v) } else { limitText = "" }
+        }
+        // Tap fuera cierra el teclado cuando el campo de límite está enfocado
+        .overlay(alignment: .center) {
+            if limitFocused {
+                Color.black.opacity(0.001)
+                    .ignoresSafeArea()
+                    .onTapGesture { limitFocused = false }
+            }
+        }
     }
 }
 

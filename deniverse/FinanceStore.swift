@@ -41,6 +41,15 @@ final class FinanceStore: ObservableObject {
             try? data.write(to: url, options: .atomic)
         }
     }
+
+    // MARK: - Mutations helpers
+    func remove(_ tx: Transaction) {
+        if let idx = transactions.firstIndex(where: { $0.id == tx.id }) {
+            transactions.remove(at: idx)
+            // Revert its effect on the balance
+            walletBalance -= tx.amount
+        }
+    }
 }
 
 // Codable helper to persist Transaction

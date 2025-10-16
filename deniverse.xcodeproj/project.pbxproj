@@ -16,7 +16,7 @@
 		66607A1F2EA00CA000ACEA75 /* ViewExtensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66607A1E2EA00C9F00ACEA75 /* ViewExtensions.swift */; };
 		C803D1DF2E9F6F73009048DA /* NotesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C803D1DE2E9F6F73009048DA /* NotesView.swift */; };
 		C803D1E02E9F6F73009048DA /* FinanceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C803D1DD2E9F6F73009048DA /* FinanceView.swift */; };
-		C89A1AA82E9F70AB00E445A5 /* UIUtils 2.swift in Sources */ = {isa = PBXBuildFile; fileRef = C89A1AA72E9F70AA00E445A5 /* UIUtils 2.swift */; };
+
 		C89DB0062E9F24B000B9B249 /* deniverse/deniappApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C89DB0012E9F24B000B9B249 /* deniverse/deniappApp.swift */; };
 		C89DB0072E9F24B000B9B249 /* deniverse/ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C89DB0022E9F24B000B9B249 /* deniverse/ContentView.swift */; };
 		C89DB0082E9F24B000B9B249 /* deniverse/SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C89DB0032E9F24B000B9B249 /* deniverse/SettingsView.swift */; };
@@ -34,7 +34,7 @@
 		66607A1E2EA00C9F00ACEA75 /* ViewExtensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewExtensions.swift; sourceTree = "<group>"; };
 		C803D1DD2E9F6F73009048DA /* FinanceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinanceView.swift; sourceTree = "<group>"; };
 		C803D1DE2E9F6F73009048DA /* NotesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesView.swift; sourceTree = "<group>"; };
-		C89A1AA72E9F70AA00E445A5 /* UIUtils 2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UIUtils 2.swift"; sourceTree = "<group>"; };
+
 		C89DAC082E9F236100B9B249 /* Deniverse.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Deniverse.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C89DB0012E9F24B000B9B249 /* deniverse/deniappApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = deniverse/deniappApp.swift; sourceTree = SOURCE_ROOT; };
 		C89DB0022E9F24B000B9B249 /* deniverse/ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = deniverse/ContentView.swift; sourceTree = SOURCE_ROOT; };
@@ -83,7 +83,7 @@
 				662F711C2EA003A100FF63A2 /* AgendaStore.swift */,
 				C89DB0042E9F24B000B9B249 /* deniverse/PreferencesStore.swift */,
 				66607A1E2EA00C9F00ACEA75 /* ViewExtensions.swift */,
-				C89A1AA72E9F70AA00E445A5 /* UIUtils 2.swift */,
+
 				662F711E2EA0087F00FF63A2 /* View+AppItalic.swift */,
 				665679D52EA01E9A008AE20C /* FinanceStore.swift */,
 				662F71202EA0099500FF63A2 /* View+AppTypography.swift */,
@@ -167,7 +167,7 @@
 				C89DB0062E9F24B000B9B249 /* deniverse/deniappApp.swift in Sources */,
 				C89DB0072E9F24B000B9B249 /* deniverse/ContentView.swift in Sources */,
 				C803D1DF2E9F6F73009048DA /* NotesView.swift in Sources */,
-				C89A1AA82E9F70AB00E445A5 /* UIUtils 2.swift in Sources */,
+
 				662F71212EA0099500FF63A2 /* View+AppTypography.swift in Sources */,
 				662F711D2EA003A100FF63A2 /* AgendaStore.swift in Sources */,
 				C803D1E02E9F6F73009048DA /* FinanceView.swift in Sources */,

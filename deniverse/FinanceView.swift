@@ -18,6 +18,10 @@ struct FinanceView: View {
     enum BalanceMode: String, CaseIterable, Identifiable { case total, today; var id: String { rawValue }; var title: String { self == .total ? "Saldo" : "Hoy" } }
     @State private var balanceMode: BalanceMode = .total
     @State private var dragX: CGFloat = 0
+    // Day filter state (Todos / Hoy / Fecha)
+    enum DayMode: String, CaseIterable, Identifiable { case all, today, specific; var id: String { rawValue }; var title: String { self == .all ? "Todos" : (self == .today ? "Hoy" : "Fecha") } }
+    @State private var dayMode: DayMode = .all
+    @State private var daySelected: Date = .now
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -59,6 +63,14 @@ struct FinanceView: View {
                 ForEach(TxFilter.allCases) { f in Text(f.title).tag(f) }
             }
             .pickerStyle(.segmented)
+            // Day filter
+            Picker("Día", selection: $dayMode) {
+                ForEach(DayMode.allCases) { m in Text(m.title).tag(m) }
+            }
+            .pickerStyle(.segmented)
+            if dayMode == .specific {
+                DatePicker("Fecha", selection: $daySelected, displayedComponents: .date)
+            }
         }
     }
 
@@ -67,36 +79,55 @@ struct FinanceView: View {
     private var transactionsList: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Transacciones").font(.headline)
-            if filtered.isEmpty {
+            if filteredSorted.isEmpty {
                 Text("Sin movimientos para este filtro")
                     .font(.footnote).foregroundStyle(subtleForeground)
                     .padding(.vertical, 6)
             } else {
+                let rowH: CGFloat = 72
                 VStack(spacing: 10) {
-                    ForEach(filtered, id: \.id) { tx in
-                        HStack(spacing: 12) {
+                    ForEach(filteredSorted, id: \.id) { tx in
+                        HStack(spacing: 10) {
                             ZStack {
                                 Circle()
-                                    .fill((tx.amount < 0 ? Color.red : Color.green).opacity(0.12))
-                                    .frame(width: 32, height: 32)
-                                Text(tx.category.emoji).font(.system(size: 16))
+                                    .fill((tx.amount < 0 ? Color.red : Color(red: 0.0, green: 0.5, blue: 0.2)).opacity(0.12))
+                                    .frame(width: 28, height: 28)
+                                Text(tx.category.emoji).font(.system(size: 14))
                             }
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("\(tx.category.emoji) \(tx.title)")
-                                    .font(.subheadline.weight(.semibold))
-                                Text(tx.dateFormatted)
-                                    .font(.footnote)
+                                Text(tx.title)
+                                    .font(.callout.weight(.semibold))
+                                Text(tx.dateTimeFormatted)
+                                    .font(.caption)
                                     .foregroundStyle(subtleForeground)
                             }
                             Spacer()
-                            Text(currencyString(tx.amount))
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(tx.amount < 0 ? .red : .green)
+                            Text(prefs.currencyString(tx.amount))
+                                .font(.callout.weight(.semibold))
+                                .foregroundStyle(tx.amount < 0 ? .red : Color(red: 0.0, green: 0.5, blue: 0.2))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 5)
+                                .background(
+                                    ZStack {
+                                        Capsule(style: .continuous)
+                                            .fill((tx.amount < 0 ? Color.red : Color(red: 0.0, green: 0.5, blue: 0.2))
+                                                .opacity(prefs.tone == .white ? 0.12 : 0.22))
+                                        Capsule(style: .continuous)
+                                            .stroke(
+                                                LinearGradient(
+                                                    colors: [Color.white.opacity(0.6), (tx.amount < 0 ? Color.red : Color(red: 0.0, green: 0.5, blue: 0.2)).opacity(0.45)],
+                                                    startPoint: .topLeading, endPoint: .bottomTrailing
+                                                ),
+                                                lineWidth: 1
+                                            )
+                                    }
+                                )
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 12)
-                        .background(RoundedRectangle(cornerRadius: 14).fill(appSurface))
-                        .overlay(RoundedRectangle(cornerRadius: 14).stroke(appStroke, lineWidth: 1))
+                        .frame(minHeight: rowH)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(appSurface))
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(appStroke, lineWidth: 1))
                         .contentShape(Rectangle())
                         .onTapGesture { editing = tx }
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
@@ -104,6 +135,7 @@ struct FinanceView: View {
                             Button(role: .destructive) { delete(tx) } label: { Label("Borrar", systemImage: "trash") }
                         }
                     }
+                    .padding(.bottom, 4)
                 }
             }
         }
@@ -116,22 +148,24 @@ struct FinanceView: View {
         }
     }
 
-    private var filtered: [Transaction] {
-        finance.transactions.filter { tx in
+    private var filteredSorted: [Transaction] {
+        let cal = Calendar.current
+        return finance.transactions.filter { tx in
             switch txFilter {
             case .all: return true
             case .income: return tx.amount > 0
             case .expense: return tx.amount < 0
             }
-        }
+        }.filter { tx in
+            switch dayMode {
+            case .all: return true
+            case .today: return cal.isDateInToday(tx.date)
+            case .specific: return cal.isDate(tx.date, inSameDayAs: daySelected)
+            }
+        }.sorted(by: { $0.date > $1.date })
     }
 
-    private func delete(_ tx: Transaction) {
-        if let idx = finance.transactions.firstIndex(where: { $0.id == tx.id }) {
-            finance.transactions.remove(at: idx)
-            finance.walletBalance -= tx.amount // revert effect en saldo
-        }
-    }
+    private func delete(_ tx: Transaction) { finance.remove(tx) }
 
     private func applyEdit(old: Transaction, new: Transaction) {
         guard let idx = finance.transactions.firstIndex(where: { $0.id == old.id }) else { return }
@@ -210,7 +244,7 @@ struct FinanceView: View {
                                 .submitLabel(.done)
                                 .multilineTextAlignment(.center)
                                 .font(.system(size: 38, weight: .semibold, design: .rounded))
-                                Text("Actual: \(currencyString(finance.walletBalance))")
+                                Text("Actual: \(prefs.currencyString(finance.walletBalance))")
                                     .font(.footnote).foregroundStyle(subtleForeground)
                             }
                             .padding(.bottom, 16)
@@ -219,11 +253,11 @@ struct FinanceView: View {
                                 HStack {
                                     Text("Gasto de hoy").font(.headline)
                                     Spacer()
-                                    Text(prefs.dailySpendLimit != nil ? "de \(currencyString(limit))" : "Sin límite")
+                                    Text(prefs.dailySpendLimit != nil ? "de \(prefs.currencyString(limit))" : "Sin límite")
                                         .foregroundStyle(subtleForeground)
                                 }
                                 HStack {
-                                    Text(currencyString(spentToday)).font(.title3.weight(.semibold))
+                                    Text(prefs.currencyString(spentToday)).font(.title3.weight(.semibold))
                                     Spacer()
                                 }
                                 if let l = prefs.dailySpendLimit, l > 0 {
@@ -287,9 +321,9 @@ struct FinanceView: View {
         return VStack(alignment: .leading, spacing: 8) {
             Text("Gasto de hoy").font(.headline)
             HStack {
-                Text(currencyString(spentToday))
+                Text(prefs.currencyString(spentToday))
                 Spacer()
-                Text(prefs.dailySpendLimit != nil ? "de \(currencyString(limit))" : "Sin límite")
+                Text(prefs.dailySpendLimit != nil ? "de \(prefs.currencyString(limit))" : "Sin límite")
                     .foregroundStyle(subtleForeground)
             }
             if let l = prefs.dailySpendLimit, l > 0 {
@@ -331,7 +365,7 @@ struct FinanceView: View {
                             HStack {
                                 Text(item.label).font(.caption)
                                 Spacer()
-                                Text("+\(currencyString(item.income))  -\(currencyString(abs(item.expense)))")
+                                Text("+\(prefs.currencyString(item.income))  -\(prefs.currencyString(abs(item.expense)))")
                                     .font(.caption)
                                     .foregroundStyle(subtleForeground)
                             }
@@ -353,8 +387,8 @@ struct FinanceView: View {
                 .padding(.horizontal, 4)
                 let topIncome = data.max(by: { $0.income < $1.income })
                 let topExpense = data.max(by: { abs($0.expense) < abs($1.expense) })
-                if let ti = topIncome { Text("Mayor ingreso: \(ti.label) → \(currencyString(ti.income))").font(.footnote).foregroundStyle(subtleForeground) }
-                if let te = topExpense { Text("Mayor gasto: \(te.label) → \(currencyString(abs(te.expense)))").font(.footnote).foregroundStyle(subtleForeground) }
+                if let ti = topIncome { Text("Mayor ingreso: \(ti.label) → \(prefs.currencyString(ti.income))").font(.footnote).foregroundStyle(subtleForeground) }
+                if let te = topExpense { Text("Mayor gasto: \(te.label) → \(prefs.currencyString(abs(te.expense)))").font(.footnote).foregroundStyle(subtleForeground) }
             }
         }
     }
@@ -417,7 +451,7 @@ struct FinanceEditView: View {
                 Section(header: Text("Movimiento")) {
                     TextField("Título", text: $title)
                     TextField("Monto", text: $amountText).keyboardType(.decimalPad)
-                    DatePicker("Fecha", selection: $date, displayedComponents: .date)
+                    DatePicker("Fecha", selection: $date, displayedComponents: [.date, .hourAndMinute])
                     Picker("Categoría", selection: $category) {
                         ForEach(FinanceCategory.allCases) { c in Text("\(c.emoji) \(c.title)").tag(c) }
                     }
@@ -430,6 +464,7 @@ struct FinanceEditView: View {
                     .tint(isIncome ? .green : .red)
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Editar")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancelar") { dismiss() } }

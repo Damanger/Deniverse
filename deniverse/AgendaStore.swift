@@ -28,19 +28,24 @@ struct DayEntry: Codable {
     var drawingData: Data?
     var reminder: Date?
     var notes: [NoteItem]? // notas creadas desde Notas
+    var hourly: [Int: String]? // clave: hora (0-23)
 }
 
 final class AgendaStore: ObservableObject {
     let objectWillChange = ObservableObjectPublisher()
     
     @Published var entries: [String: DayEntry] { didSet { save() } }
+    // Notas por semana (clave: año-semana)
+    @Published var weekNotes: [String: String] { didSet { saveWeekNotes() } }
 
     private let url: URL
+    private let weekUrl: URL
     private var loading = false
 
     init(filename: String = "Agenda.json") {
         let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let fileURL = dir.appendingPathComponent(filename)
+        let weekURL = dir.appendingPathComponent("WeekNotes.json")
 
         // Prepare initial values without using self
         let initialEntries: [String: DayEntry]
@@ -50,16 +55,52 @@ final class AgendaStore: ObservableObject {
         } else {
             initialEntries = [:]
         }
+        // Load week notes (separate archivo)
+        let initialWeekNotes: [String: String]
+        if let wdata = try? Data(contentsOf: weekURL),
+           let wdict = try? JSONDecoder().decode([String: String].self, from: wdata) {
+            initialWeekNotes = wdict
+        } else {
+            initialWeekNotes = [:]
+        }
 
         // Now initialize stored properties
         self.url = fileURL
+        self.weekUrl = weekURL
         self.entries = initialEntries
+        self.weekNotes = initialWeekNotes
+    }
+
+    /// Vuelve a cargar el JSON desde disco y reemplaza `entries` sin volver a guardar.
+    func reloadFromDisk() {
+        do {
+            let data = try Data(contentsOf: url)
+            let dict = try JSONDecoder().decode([String: DayEntry].self, from: data)
+            loading = true
+            entries = dict
+            loading = false
+            DispatchQueue.main.async { self.objectWillChange.send() }
+        } catch {
+            #if DEBUG
+            print("Agenda reload error:", error)
+            #endif
+        }
     }
 
     func key(for date: Date) -> String {
         let cal = Calendar(identifier: .gregorian)
         let c = cal.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+    }
+
+    // Clave por semana (año-semana), usando calendario ISO (lunes como inicio)
+    func weekKey(for date: Date) -> String {
+        var cal = Calendar(identifier: .iso8601)
+        cal.firstWeekday = 2
+        let comps = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
+        let y = comps.yearForWeekOfYear ?? 0
+        let w = comps.weekOfYear ?? 0
+        return String(format: "%04d-W%02d", y, w)
     }
 
     func entry(for date: Date) -> DayEntry? { entries[key(for: date)] }
@@ -91,9 +132,33 @@ final class AgendaStore: ObservableObject {
         // Keep day-level reminder if any note has one (earliest)
         if let r = reminder { e.reminder = min(e.reminder ?? r, r) }
         entries[k] = e
+        // Refresca desde disco para reflejar la persistencia inmediatamente
+        reloadFromDisk()
+        DispatchQueue.main.async { self.objectWillChange.send() }
     }
 
     func notes(for date: Date) -> [NoteItem] { entries[key(for: date)]?.notes ?? [] }
+
+    // MARK: - Hourly notes
+    func hourlyText(on date: Date, hour: Int) -> String? {
+        entries[key(for: date)]?.hourly?[hour]
+    }
+
+    func setHourly(on date: Date, hour: Int, text: String?) {
+        let k = key(for: date)
+        var e = entries[k] ?? DayEntry()
+        var dict = e.hourly ?? [:]
+        let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if trimmed.isEmpty {
+            dict.removeValue(forKey: hour)
+        } else {
+            dict[hour] = trimmed
+        }
+        e.hourly = dict.isEmpty ? nil : dict
+        entries[k] = e
+        reloadFromDisk()
+        DispatchQueue.main.async { self.objectWillChange.send() }
+    }
 
     func deleteNote(on date: Date, id: UUID) {
         let k = key(for: date)
@@ -103,6 +168,8 @@ final class AgendaStore: ObservableObject {
         // Recompute day-level reminder
         e.reminder = (list.compactMap { $0.reminder }.min())
         entries[k] = e
+        reloadFromDisk()
+        DispatchQueue.main.async { self.objectWillChange.send() }
     }
 
     func updateNote(on date: Date, id: UUID, text: String, category: NoteCategory, reminder: Date?) {
@@ -115,7 +182,25 @@ final class AgendaStore: ObservableObject {
             e.notes = list
             e.reminder = (list.compactMap { $0.reminder }.min())
             entries[k] = e
+            reloadFromDisk()
+            DispatchQueue.main.async { self.objectWillChange.send() }
         }
+    }
+
+    // MARK: - Week notes helpers
+    func weekNote(for date: Date) -> String? {
+        weekNotes[weekKey(for: date)]
+    }
+
+    func setWeekNote(for date: Date, text: String?) {
+        let k = weekKey(for: date)
+        let trimmed = (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            weekNotes.removeValue(forKey: k)
+        } else {
+            weekNotes[k] = trimmed
+        }
+        DispatchQueue.main.async { self.objectWillChange.send() }
     }
 
     private func save() {
@@ -128,6 +213,19 @@ final class AgendaStore: ObservableObject {
         } catch {
             #if DEBUG
             print("Agenda save error:", error)
+            #endif
+        }
+    }
+
+    private func saveWeekNotes() {
+        do {
+            let enc = JSONEncoder()
+            enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try enc.encode(weekNotes)
+            try data.write(to: weekUrl, options: .atomic)
+        } catch {
+            #if DEBUG
+            print("Week notes save error:", error)
             #endif
         }
     }

@@ -128,6 +128,8 @@ private struct PreferencesDTO: Codable {
     var useItalic: Bool
     var fontDesign: TypographyDesign
     var dailySpendLimit: Double?
+    var agendaStartHour: Int?
+    var agendaEndHour: Int?
 }
 
 final class PreferencesStore: ObservableObject {
@@ -145,6 +147,8 @@ final class PreferencesStore: ObservableObject {
     @Published var useItalic: Bool { didSet { save() } }
     @Published var fontDesign: TypographyDesign { didSet { save() } }
     @Published var dailySpendLimit: Double? { didSet { save() } }
+    @Published var agendaStartHour: Int { didSet { save() } }
+    @Published var agendaEndHour: Int { didSet { save() } }
 
     private let url: URL
     private var loading = false
@@ -155,7 +159,8 @@ final class PreferencesStore: ObservableObject {
         self.showFinance = false
         self.hideWelcomeCard = false
         self.theme = .mint
-        self.preferredCurrency = Locale.current.currency?.identifier ?? Locale.current.currency?.identifier ?? "MXN"
+        // Default currency is MXN; user changes persist in Preferences.json
+        self.preferredCurrency = "MXN"
         self.notificationsEnabled = true
         self.tone = .white
         self.isWoman = false
@@ -165,6 +170,8 @@ final class PreferencesStore: ObservableObject {
         self.useItalic = true
         self.fontDesign = .serif
         self.dailySpendLimit = nil
+        self.agendaStartHour = 6
+        self.agendaEndHour = 21
         load()
     }
 
@@ -186,6 +193,8 @@ final class PreferencesStore: ObservableObject {
             self.useItalic = dto.useItalic
             self.fontDesign = dto.fontDesign
             self.dailySpendLimit = dto.dailySpendLimit
+            if let sh = dto.agendaStartHour { self.agendaStartHour = sh }
+            if let eh = dto.agendaEndHour { self.agendaEndHour = eh }
         }
     }
 
@@ -204,7 +213,9 @@ final class PreferencesStore: ObservableObject {
             periodLength: periodLength,
             useItalic: useItalic,
             fontDesign: fontDesign,
-            dailySpendLimit: dailySpendLimit
+            dailySpendLimit: dailySpendLimit,
+            agendaStartHour: agendaStartHour,
+            agendaEndHour: agendaEndHour
         )
         do {
             let data = try JSONEncoder.pretty.encode(dto)
@@ -219,4 +230,15 @@ final class PreferencesStore: ObservableObject {
 
 private extension JSONEncoder {
     static var pretty: JSONEncoder { let e = JSONEncoder(); e.outputFormatting = [.prettyPrinted, .sortedKeys]; return e }
+}
+
+// MARK: - Helpers
+extension PreferencesStore {
+    func currencyString(_ value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = preferredCurrency
+        formatter.locale = .current
+        return formatter.string(from: NSNumber(value: value)) ?? String(format: "%.2f", value)
+    }
 }

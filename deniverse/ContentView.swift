@@ -9,66 +9,103 @@ struct ContentView: View {
     @State private var activeEntryType: EntryType?
     @State private var selectedTab: MainTab = .notes
 
+    // MARK: - Action helpers to reduce type-checking complexity
+    private func switchToFinanceAndSet(_ type: EntryType) {
+        withAnimation { selectedTab = .finance }
+        activeEntryType = type
+    }
+
+    private func setEntryType(_ type: EntryType) {
+        activeEntryType = type
+    }
+
+    private func updateTransactions(_ new: [Transaction]) {
+        finance.transactions = new
+    }
+
     var body: some View {
         NavigationStack {
-            Group {
-                if selectedTab == .settings {
-                    SettingsView()
-                        .environmentObject(prefs)
-                } else {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 28) {
-                            switch selectedTab {
-                            case .agenda:
-                                AgendaView()
-                            case .notes:
-                                NotesView(
-                                    searchText: $searchText,
-                                    onNew: {},
-                                    onIncome: { withAnimation { selectedTab = .finance }; activeEntryType = .income },
-                                    onExpense: { withAnimation { selectedTab = .finance }; activeEntryType = .expense }
-                                )
-                            case .finance:
-                                FinanceView(
-                                    txFilter: $txFilter,
-                                    transactions: Binding(get: { finance.transactions }, set: { finance.transactions = $0 }),
-                                    onIncome: { activeEntryType = .income },
-                                    onExpense: { activeEntryType = .expense },
-                                    onReports: {}
-                                )
-                            case .settings:
-                                EmptyView() // handled above
-                            }
-                        }
-                        .padding(.horizontal)
-                        .padding(.vertical, 16)
-                    }
-                }
-            }
-            .foregroundStyle(contentForeground)
-            .appItalic(prefs.useItalic)
-            .appFontDesign(prefs.fontDesign)
-            .background(themedBackground)
-            .safeAreaInset(edge: .bottom) {
-                HStack {
-                    Spacer(minLength: 0)
-                    FooterTabBar(selected: $selectedTab)
-                        .environmentObject(prefs)
-                        .frame(maxWidth: 480)
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 6)
-                    Spacer(minLength: 0)
-                }
-                .background(Color.clear)
-            }
+            mainContent
+                .foregroundStyle(contentForeground)
+                .appItalic(prefs.useItalic)
+                .appFontDesign(prefs.fontDesign)
+                .background(themedBackground)
+                .safeAreaInset(edge: .bottom) { footerBar }
         }
         .sheet(item: $activeEntryType) { type in
             AddTransactionView(kind: type) { tx in
                 finance.transactions.insert(tx, at: 0)
-                // Ajusta el saldo directamente con el movimiento
                 finance.walletBalance += tx.amount
             }
         }
+        .onChange(of: finance.transactions) { _, newValue in
+            finance.walletBalance = newValue.map { $0.amount }.reduce(0, +)
+        }
+    }
+
+    @ViewBuilder
+    private var mainContent: some View {
+        Group {
+            if selectedTab == .settings {
+                SettingsView()
+                    .environmentObject(prefs)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 28) {
+                        tabContent
+                    }
+                    .padding(.horizontal)
+                    .padding(.vertical, 16)
+                }
+                .scrollDismissesKeyboard(.interactively)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var tabContent: some View {
+        switch selectedTab {
+        case .agenda:
+            AgendaView()
+        case .notes:
+            notesSection
+        case .finance:
+            financeSection
+        case .settings:
+            EmptyView()
+        }
+    }
+
+    private var notesSection: some View {
+        NotesView(
+            searchText: $searchText,
+            onNew: {},
+            onIncome: { switchToFinanceAndSet(.income) },
+            onExpense: { switchToFinanceAndSet(.expense) }
+        )
+    }
+
+    private var financeSection: some View {
+        FinanceView(
+            txFilter: $txFilter,
+            transactions: Binding(get: { finance.transactions }, set: { updateTransactions($0) }),
+            onIncome: { setEntryType(.income) },
+            onExpense: { setEntryType(.expense) },
+            onReports: {}
+        )
+    }
+
+    private var footerBar: some View {
+        HStack {
+            Spacer(minLength: 0)
+            FooterTabBar(selected: $selectedTab)
+                .environmentObject(prefs)
+                .frame(maxWidth: 480)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 6)
+            Spacer(minLength: 0)
+        }
+        .background(Color.clear)
     }
 
     private var header: some View {
@@ -194,7 +231,7 @@ extension ContentView {
             Label(title, systemImage: systemImage)
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(subtleForeground)
-            Text(currencyString(value))
+            Text(prefs.currencyString(value))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(contentForeground)
         }
@@ -236,22 +273,39 @@ extension ContentView {
                             HStack(spacing: 12) {
                                 ZStack {
                                     Circle()
-                                        .fill((tx.amount < 0 ? Color.red : Color.green).opacity(0.12))
+                                    .fill((tx.amount < 0 ? Color.red : Color(red: 0.0, green: 0.5, blue: 0.2)).opacity(0.12))
                                         .frame(width: 32, height: 32)
                                     Text(tx.category.emoji)
                                         .font(.system(size: 16))
                                 }
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text("\(tx.category.emoji) \(tx.title)")
+                                    Text(tx.title)
                                         .font(.subheadline.weight(.semibold))
-                                    Text(tx.dateFormatted)
-                                        .font(.footnote)
-                                        .foregroundStyle(subtleForeground)
+                                Text(tx.dateTimeFormatted)
+                                    .font(.footnote)
+                                    .foregroundStyle(subtleForeground)
                                 }
                                 Spacer()
-                                Text(currencyString(tx.amount))
+                                Text(prefs.currencyString(tx.amount))
                                     .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(contentForeground)
+                                    .foregroundStyle(tx.amount < 0 ? .red : Color(red: 0.0, green: 0.5, blue: 0.2))
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(
+                                        ZStack {
+                                            Capsule(style: .continuous)
+                                                .fill((tx.amount < 0 ? Color.red : Color(red: 0.0, green: 0.5, blue: 0.2))
+                                                    .opacity(isLightTone ? 0.12 : 0.22))
+                                            Capsule(style: .continuous)
+                                                .stroke(
+                                                    LinearGradient(
+                                                        colors: [Color.white.opacity(0.6), (tx.amount < 0 ? Color.red : Color(red: 0.0, green: 0.5, blue: 0.2)).opacity(0.45)],
+                                                        startPoint: .topLeading, endPoint: .bottomTrailing
+                                                    ),
+                                                    lineWidth: 1
+                                                )
+                                        }
+                                    )
                             }
                             .padding(.horizontal, 12)
                             .padding(.vertical, 12)
@@ -284,7 +338,7 @@ extension ContentView {
             }()
             let matchesSearch = q.isEmpty || tx.title.lowercased().contains(q)
             return matchesFilter && matchesSearch
-        }
+        }.sorted(by: { $0.date > $1.date })
     }
 }
 
@@ -371,12 +425,12 @@ struct FooterTabBar: View {
                 // Background footer container with slight blur + glass contour
                 ZStack {
                     let isLight = (prefs.tone == .white)
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    RoundedRectangle(cornerRadius: 25, style: .continuous)
                         .fill(isLight ? .regularMaterial : .ultraThinMaterial)
                         .opacity(0.75)
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    RoundedRectangle(cornerRadius: 25, style: .continuous)
                         .fill((isLight ? Color.white.opacity(0.06) : Color.black.opacity(0.10)))
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    RoundedRectangle(cornerRadius: 25, style: .continuous)
                         .stroke(
                             LinearGradient(colors: [Color.white.opacity(isLight ? 0.45 : 0.25), prefs.theme.stroke(for: prefs.tone).opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing),
                             lineWidth: 0.9
@@ -568,7 +622,7 @@ enum FinanceCategory: String, CaseIterable, Identifiable, Codable {
     }
 }
 
-struct Transaction: Identifiable {
+struct Transaction: Identifiable, Equatable {
     let id: UUID
     let title: String
     let amount: Double // positivo ingreso, negativo gasto
@@ -580,9 +634,10 @@ struct Transaction: Identifiable {
     }
 
     var dateFormatted: String {
-        let df = DateFormatter()
-        df.dateStyle = .medium
-        return df.string(from: date)
+        let df = DateFormatter(); df.dateStyle = .medium; return df.string(from: date)
+    }
+    var dateTimeFormatted: String {
+        let df = DateFormatter(); df.dateStyle = .medium; df.timeStyle = .short; return df.string(from: date)
     }
 }
 
@@ -671,7 +726,7 @@ enum TxFilter: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .all: return "Todos"
+        case .all: return "Ingresos & Gastos"
         case .income: return "Ingresos"
         case .expense: return "Gastos"
         }
@@ -684,13 +739,33 @@ private extension ContentView {}
 
 struct AddTransactionView: View {
     let kind: EntryType
+    let existing: Transaction?
     let onSave: (Transaction) -> Void
+    let onDelete: ((Transaction) -> Void)?
 
     @Environment(\.dismiss) private var dismiss
-    @State private var title: String = ""
-    @State private var amountText: String = ""
-    @State private var date: Date = .now
-    @State private var category: FinanceCategory = .other
+    @State private var title: String
+    @State private var amountText: String
+    @State private var date: Date
+    @State private var category: FinanceCategory
+
+    init(kind: EntryType, existing: Transaction? = nil, onSave: @escaping (Transaction) -> Void, onDelete: ((Transaction) -> Void)? = nil) {
+        self.kind = kind
+        self.existing = existing
+        self.onSave = onSave
+        self.onDelete = onDelete
+        if let tx = existing {
+            _title = State(initialValue: tx.title)
+            _amountText = State(initialValue: String(format: "%.2f", abs(tx.amount)))
+            _date = State(initialValue: tx.date)
+            _category = State(initialValue: tx.category)
+        } else {
+            _title = State(initialValue: "")
+            _amountText = State(initialValue: "")
+            _date = State(initialValue: .now)
+            _category = State(initialValue: .other)
+        }
+    }
 
     private var parsedAmount: Double? {
         Double(amountText.replacingOccurrences(of: ",", with: "."))
@@ -712,7 +787,7 @@ struct AddTransactionView: View {
                     TextField("Título", text: $title)
                     TextField("Monto", text: $amountText)
                         .keyboardType(.decimalPad)
-                    DatePicker("Fecha", selection: $date, displayedComponents: .date)
+                    DatePicker("Fecha", selection: $date, displayedComponents: [.date, .hourAndMinute])
                 }
                 Section(header: Text("Categoría")) {
                     Picker("Categoría", selection: $category) {
@@ -721,8 +796,23 @@ struct AddTransactionView: View {
                         }
                     }
                 }
+                if let tx = existing, let onDelete {
+                    Section {
+                        Button(role: .destructive) {
+                            onDelete(tx)
+                            dismiss()
+                        } label: {
+                            HStack {
+                                Spacer()
+                                Text("Eliminar transacción")
+                                Spacer()
+                            }
+                        }
+                    }
+                }
             }
-            .navigationTitle("Nuevo \(kind.title)")
+            .scrollDismissesKeyboard(.interactively)
+            .navigationTitle((existing == nil) ? "Nuevo \(kind.title)" : "Editar \(kind.title)")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancelar") { dismiss() }
@@ -730,6 +820,9 @@ struct AddTransactionView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Guardar") { save() }
                         .disabled(!canSave)
+                }
+                ToolbarItem(placement: .destructiveAction) {
+                    EmptyView()
                 }
             }
         }
@@ -743,7 +836,7 @@ struct AddTransactionView: View {
     private func save() {
         guard let amount = parsedAmount, amount > 0 else { return }
         let signed = kind == .income ? amount : -amount
-        let tx = Transaction(title: title.trimmingCharacters(in: .whitespacesAndNewlines), amount: signed, date: date, category: category)
+        let tx = Transaction(id: existing?.id ?? UUID(), title: title.trimmingCharacters(in: .whitespacesAndNewlines), amount: signed, date: date, category: category)
         onSave(tx)
         dismiss()
     }
@@ -761,3 +854,4 @@ struct ContentView_Previews: PreviewProvider {
         }
     }
 }
+

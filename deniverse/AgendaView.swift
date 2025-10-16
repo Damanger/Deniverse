@@ -1,5 +1,6 @@
 import SwiftUI
 import PencilKit
+import UniformTypeIdentifiers
 
 enum AgendaMode { case month, week }
 
@@ -9,6 +10,7 @@ struct AgendaView: View {
     @State private var mode: AgendaMode = .month
     @EnvironmentObject private var agenda: AgendaStore
     @State private var editor: DaySelection?
+    @State private var hourPicker: DaySelection? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -16,7 +18,7 @@ struct AgendaView: View {
             Group {
                 switch mode {
                 case .month:
-                    MonthCalendarView(date: $selectedDate, onDayTap: { d in editor = DaySelection(date: d) })
+                    MonthCalendarView(date: $selectedDate, onDayTap: { d in hourPicker = DaySelection(date: d) })
                         .environmentObject(prefs)
                 case .week:
                     WeeklyPlannerView(
@@ -25,9 +27,9 @@ struct AgendaView: View {
                             if let data = agenda.entry(for: date)?.drawingData, let d = try? PKDrawing(data: data) { return d }
                             return nil
                         },
-                        onDayTap: { d in editor = DaySelection(date: d) }
+                        onDayTap: { d in hourPicker = DaySelection(date: d) }
                     )
-                        .environmentObject(prefs)
+                    .environmentObject(prefs)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -47,6 +49,12 @@ struct AgendaView: View {
                     agenda.update(date: sel.date, text: nil, drawingData: nil)
                 }
             )
+        }
+        // Horas del día (popover/sheet) para la vista semanal
+        .sheet(item: $hourPicker) { sel in
+            DayHoursSheet(date: sel.date)
+                .environmentObject(prefs)
+                .environmentObject(agenda)
         }
     }
 
@@ -109,7 +117,7 @@ private struct MonthCalendarView: View {
     private var calendar: Calendar {
         var cal = Calendar(identifier: .gregorian)
         cal.locale = Locale(identifier: "es_ES")
-        cal.firstWeekday = 2 // Monday-first
+        cal.firstWeekday = 1 // Sunday-first
         return cal
     }
 
@@ -136,7 +144,7 @@ private struct MonthCalendarView: View {
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 7)
 
-    private var weekdayHeaders: [String] { ["L", "M", "M", "J", "V", "S", "D"] }
+    private var weekdayHeaders: [String] { ["D", "L", "M", "M", "J", "V", "S"] }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -168,7 +176,7 @@ private struct MonthCalendarView: View {
             // Weekday header row
             LazyVGrid(columns: columns, spacing: 0) {
                 ForEach(weekdayHeaders.indices, id: \.self) { i in
-                    let isWeekend = (i >= 5)
+                    let isWeekend = (i == 0 || i == 6)
                     Text(weekdayHeaders[i])
                         .font(.system(.footnote, design: .serif).weight(.semibold)).appItalic(prefs.useItalic)
                         .frame(maxWidth: .infinity)
@@ -326,6 +334,9 @@ private struct WeeklyPlannerView: View {
     private let columns3 = Array(repeating: GridItem(.flexible(), spacing: 12), count: 3)
     private let columns2 = Array(repeating: GridItem(.flexible(), spacing: 12), count: 2)
 
+    @State private var showWeekEditor: Bool = false
+    @State private var weekDraft: String = ""
+
     var body: some View {
         VStack(spacing: 12) {
             LazyVGrid(columns: columns3, spacing: 12) {
@@ -336,6 +347,27 @@ private struct WeeklyPlannerView: View {
             LazyVGrid(columns: columns2, spacing: 12) {
                 dayBox(index: 6)
                 notesBox
+            }
+        }
+        .sheet(isPresented: $showWeekEditor) {
+            NavigationStack {
+                Form {
+                    Section(header: Text(weekHeaderTitle)) {
+                        TextEditor(text: $weekDraft)
+                            .frame(minHeight: 180)
+                    }
+                }
+                .navigationTitle("Notas de la semana")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Cancelar") { showWeekEditor = false } }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Guardar") {
+                            agenda.setWeekNote(for: weekStart, text: weekDraft)
+                            showWeekEditor = false
+                        }
+                    }
+                }
+                .onAppear { weekDraft = agenda.weekNote(for: weekStart) ?? "" }
             }
         }
     }
@@ -354,8 +386,36 @@ private struct WeeklyPlannerView: View {
                     .foregroundStyle(subtle)
             }
             .padding(.bottom, 2)
-            // Thumbnail preview of note drawing (solo Pencil)
-            if let draw = drawingFor(d) {
+            // Si hay horas con texto, mostrar 3 entradas más cercanas a la hora actual; si no, mostrar dibujo
+            if let hourly = agenda.entry(for: d)?.hourly, !hourly.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    let nearest = nearestHours(for: d, limit: 3)
+                    ForEach(nearest, id: \.self) { h in
+                        HStack(spacing: 6) {
+                            Text(String(format: "%02d:00", h))
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(subtle)
+                                .frame(width: 44, alignment: .leading)
+                            Text(hourly[h] ?? "")
+                                .font(.caption)
+                                .lineLimit(1)
+                                .foregroundStyle(prefs.tone == .white ? .black : .white)
+                        }
+                    }
+                }
+                .frame(minHeight: 80, alignment: .topLeading)
+                .overlay(alignment: .bottomTrailing) {
+                    let extra = extraCount(for: d, shown: 3)
+                    if extra > 0 {
+                        Text("+\(extra)")
+                            .font(.caption2.weight(.semibold))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(prefs.tone == .white ? Color.black.opacity(0.08) : Color.white.opacity(0.12)))
+                            .overlay(Capsule().strokeBorder(stroke, lineWidth: 1))
+                    }
+                }
+            } else if let draw = drawingFor(d) {
                 DrawingThumbnail(drawing: draw)
                     .frame(height: 80)
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -375,16 +435,61 @@ private struct WeeklyPlannerView: View {
         .onTapGesture { onDayTap(d) }
     }
 
+    // Devuelve hasta `limit` horas con texto, más cercanas a la hora actual
+    private func nearestHours(for d: Date, limit: Int) -> [Int] {
+        guard let dict = agenda.entry(for: d)?.hourly, !dict.isEmpty else { return [] }
+        let nowHour = Calendar.current.component(.hour, from: Date())
+        return dict.keys
+            .sorted { lhs, rhs in
+                let dl = abs(lhs - nowHour), dr = abs(rhs - nowHour)
+                return dl == dr ? lhs < rhs : dl < dr
+            }
+            .prefix(limit)
+            .map { $0 }
+    }
+
+    private func extraCount(for d: Date, shown: Int) -> Int {
+        let total = agenda.entry(for: d)?.hourly?.count ?? 0
+        return max(0, total - shown)
+    }
+
     private var notesBox: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             Text("NOTAS").font(.system(.footnote, design: .serif).weight(.semibold)).appItalic(prefs.useItalic)
-            Spacer(minLength: 80)
+            let text = agenda.weekNote(for: weekStart) ?? ""
+            if text.isEmpty {
+                Button {
+                    showWeekEditor = true
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "square.and.pencil")
+                        Text("Escribe notas para esta semana")
+                    }
+                    .font(.caption)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 6)
+                Spacer(minLength: 60)
+            } else {
+                Text(text)
+                    .font(.caption)
+                    .lineLimit(6)
+                HStack {
+                    Spacer()
+                    Button("Editar") { showWeekEditor = true }
+                        .font(.caption.weight(.semibold))
+                }
+            }
         }
         .frame(maxWidth: .infinity, minHeight: 140)
         .padding(10)
         .background(glassBox(12))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(stroke, lineWidth: 1))
         .shadow(color: Color.black.opacity(prefs.tone == .white ? 0.06 : 0.3), radius: 6, y: 3)
+    }
+
+    private var weekHeaderTitle: String {
+        let df = DateFormatter(); df.locale = Locale(identifier: "es_ES"); df.dateFormat = "'Semana de' d 'de' MMMM"; return df.string(from: weekStart).capitalized
     }
 
     private var stroke: Color { prefs.theme.stroke(for: prefs.tone) }
@@ -399,6 +504,292 @@ private struct WeeklyPlannerView: View {
             RoundedRectangle(cornerRadius: corner, style: .continuous)
                 .fill(isLight ? Color.black.opacity(0.08) : Color.white.opacity(0.06))
         }
+    }
+}
+
+// MARK: - Day Hours Sheet for weekly planner
+
+private struct DayHoursSheet: View {
+    @EnvironmentObject private var prefs: PreferencesStore
+    @EnvironmentObject private var agenda: AgendaStore
+    @Environment(\.dismiss) private var dismiss
+    let date: Date
+    @State private var activeHour: Int? = nil
+    @State private var selectedHourForEdit: Int? = nil
+    // Modo de intercambio por selección (sin drag & drop)
+    @State private var swapMode: Bool = false
+    @State private var selectedForSwap: Set<Int> = []
+
+    private var hours: [Int] { Array(prefs.agendaStartHour...prefs.agendaEndHour) }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section(header: Text(dateHeader)) {
+                    ForEach(hours, id: \.self) { h in
+                        hourRow(for: h)
+                    }
+                }
+            }
+            .navigationTitle("Horas del día")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cerrar") { dismiss() } }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(swapMode ? "Cancelar" : "Intercambiar") {
+                        withAnimation { swapMode.toggle(); selectedForSwap.removeAll() }
+                    }
+                }
+            }
+            .sheet(isPresented: Binding(get: { selectedHourForEdit != nil }, set: { if !$0 { selectedHourForEdit = nil } })) {
+                if let h = selectedHourForEdit {
+                    NavigationStack {
+                        HourEntryEditor(date: date, hour: h)
+                            .environmentObject(prefs)
+                            .environmentObject(agenda)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func hourRow(for h: Int) -> some View {
+        HStack {
+            Text(String(format: "%02d:00", h))
+                .font(.subheadline.weight(.semibold))
+            Spacer()
+            Text(agenda.hourlyText(on: date, hour: h) ?? "")
+                .lineLimit(1)
+                .foregroundStyle(.secondary)
+            Button {
+                selectedHourForEdit = h
+            } label: {
+                Image(systemName: "square.and.pencil")
+            }
+            .buttonStyle(.plain)
+            .padding(.leading, 6)
+        }
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill( selectedForSwap.contains(h) ? Color.accentColor.opacity(0.18) : Color.clear )
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard swapMode else { return }
+            toggleSelection(hour: h)
+            if selectedForSwap.count == 2 { performSwap() }
+        }
+    }
+
+    private var dateHeader: String {
+        let df = DateFormatter(); df.locale = Locale(identifier: "es_ES"); df.dateFormat = "EEEE d 'de' MMMM"; return df.string(from: date).capitalized
+    }
+
+    // MARK: - Swap selection helpers
+    private func toggleSelection(hour: Int) {
+        if selectedForSwap.contains(hour) {
+            selectedForSwap.remove(hour)
+        } else {
+            if selectedForSwap.count < 2 { selectedForSwap.insert(hour) }
+            else {
+                // If already two selected, replace the most recent selection
+                if let first = selectedForSwap.first { selectedForSwap.remove(first) }
+                selectedForSwap.insert(hour)
+            }
+        }
+    }
+
+    private func performSwap() {
+        guard selectedForSwap.count == 2 else { return }
+        let hours = Array(selectedForSwap).sorted()
+        let h1 = hours[0], h2 = hours[1]
+        if h1 == h2 { return }
+        let t1 = agenda.hourlyText(on: date, hour: h1)
+        let t2 = agenda.hourlyText(on: date, hour: h2)
+        agenda.setHourly(on: date, hour: h1, text: t2)
+        agenda.setHourly(on: date, hour: h2, text: t1)
+        withAnimation {
+            selectedForSwap.removeAll(); swapMode = false
+        }
+    }
+}
+
+// MARK: - Conditional draggable helper
+private struct ConditionalDraggable: ViewModifier {
+    let payload: String?
+    @ViewBuilder func body(content: Content) -> some View {
+        if let p = payload {
+            content.draggable(p)
+        } else {
+            content
+        }
+    }
+}
+
+private extension View {
+    func draggableIf(_ payload: String?) -> some View { self.modifier(ConditionalDraggable(payload: payload)) }
+}
+
+// (Drag & Drop removido por simplicidad; se usa intercambio por selección)
+
+private struct HourEntryEditor: View {
+    @EnvironmentObject private var prefs: PreferencesStore
+    @EnvironmentObject private var agenda: AgendaStore
+    @Environment(\.dismiss) private var dismiss
+    let date: Date
+    let hour: Int
+    @State private var text: String = ""
+
+    var body: some View {
+        Form {
+            Section(header: Text(header)) {
+                TextField("Escribe aquí...", text: $text, axis: .vertical)
+                    .lineLimit(3...8)
+            }
+            if !(agenda.hourlyText(on: date, hour: hour) ?? "").isEmpty {
+                Section {
+                    Button("Borrar", role: .destructive) {
+                        agenda.setHourly(on: date, hour: hour, text: nil)
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .navigationTitle("Editar hora")
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) { Button("Cancelar") { dismiss() } }
+            ToolbarItem(placement: .confirmationAction) { Button("Guardar") { agenda.setHourly(on: date, hour: hour, text: text); dismiss() } }
+        }
+        .onAppear { text = agenda.hourlyText(on: date, hour: hour) ?? "" }
+    }
+
+    private var header: String { String(format: "%@ · %02d:00", dateShort, hour) }
+    private var dateShort: String { let df = DateFormatter(); df.locale = Locale(identifier: "es_ES"); df.dateFormat = "EEE d MMM"; return df.string(from: date) }
+}
+
+// MARK: - Weekly Hours Grid (configurable)
+
+private struct WeeklyHoursGrid: View {
+    @EnvironmentObject private var prefs: PreferencesStore
+    @EnvironmentObject private var agenda: AgendaStore
+    @Binding var date: Date
+
+    private var calendar: Calendar {
+        var cal = Calendar(identifier: .gregorian)
+        cal.locale = Locale(identifier: "es_ES")
+        cal.firstWeekday = 2
+        return cal
+    }
+
+    private var weekStart: Date {
+        let comps = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
+        let start = calendar.date(from: comps) ?? date
+        let wd = calendar.component(.weekday, from: start)
+        let delta = ((wd - calendar.firstWeekday + 7) % 7)
+        return calendar.date(byAdding: .day, value: -delta, to: start) ?? start
+    }
+
+    private var days: [Date] { (0..<7).compactMap { calendar.date(byAdding: .day, value: $0, to: weekStart) } }
+    private var hours: [Int] { Array(prefs.agendaStartHour...prefs.agendaEndHour) }
+
+    private var columns: [GridItem] {
+        // First column is fixed width for time labels
+        var cols: [GridItem] = [GridItem(.fixed(56), spacing: 0)]
+        cols.append(contentsOf: Array(repeating: GridItem(.flexible(minimum: 40), spacing: 0), count: 7))
+        return cols
+    }
+
+    @State private var adding: DaySelection? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Planificador semanal")
+                .font(.headline)
+            // Headers
+            LazyVGrid(columns: columns, spacing: 0) {
+                // Empty corner cell
+                Text("")
+                    .frame(height: 28)
+                    .background(headerBG)
+                ForEach(["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"], id: \.self) { title in
+                    Text(title)
+                        .font(.footnote.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 28)
+                        .background(headerBG)
+                        .overlay(Rectangle().strokeBorder(stroke, lineWidth: 0.5))
+                }
+            }
+            // Grid rows (sin ScrollView interno para que todo el contenido esté disponible
+            // y el Scroll exterior de la pantalla sea quien maneje el desplazamiento)
+            LazyVGrid(columns: columns, spacing: 0) {
+                ForEach(hours, id: \.self) { h in
+                    HStack {
+                        Text(String(format: "%02d:00", h))
+                            .font(.caption)
+                            .padding(.leading, 6)
+                        Spacer()
+                    }
+                    .frame(height: 36)
+                    .overlay(Rectangle().strokeBorder(stroke, lineWidth: 0.5))
+                    ForEach(0..<7, id: \.self) { i in
+                        let d = days[i]
+                        Button {
+                            adding = DaySelection(date: d)
+                        } label: {
+                            Rectangle()
+                                .fill(Color.clear)
+                                .frame(height: 36)
+                                .overlay(Rectangle().strokeBorder(stroke, lineWidth: 0.5))
+                        }
+                        .buttonStyle(.plain)
+                        .contentShape(Rectangle())
+                    }
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(stroke, lineWidth: 1))
+            .sheet(item: $adding) { sel in
+                DayNoteQuickEditor(date: sel.date) { text in
+                    agenda.addNote(on: sel.date, text: text, category: .other, reminder: nil)
+                }
+                .environmentObject(prefs)
+            }
+        }
+    }
+
+    private var stroke: Color { prefs.theme.stroke(for: prefs.tone) }
+    private var headerBG: some View { (prefs.tone == .white ? Color.black.opacity(0.06) : Color.white.opacity(0.06)) }
+}
+
+private struct DayNoteQuickEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var prefs: PreferencesStore
+    let date: Date
+    var onSave: (String) -> Void
+    @State private var text: String = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section(header: Text(dateLabel)) {
+                    TextField("Escribe una nota para este día...", text: $text, axis: .vertical)
+                        .lineLimit(3...6)
+                }
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .navigationTitle("Nueva nota")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancelar") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("Guardar") { onSave(text); dismiss() } }
+            }
+        }
+    }
+
+    private var dateLabel: String {
+        let df = DateFormatter(); df.locale = Locale(identifier: "es_ES"); df.dateFormat = "EEE d MMM"; return df.string(from: date)
     }
 }
 

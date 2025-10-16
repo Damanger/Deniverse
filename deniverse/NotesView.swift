@@ -237,7 +237,7 @@ private struct NotesMonthCalendarView: View {
     private var calendar: Calendar {
         var c = Calendar(identifier: .gregorian)
         c.locale = Locale(identifier: "es_ES")
-        c.firstWeekday = 2
+        c.firstWeekday = 1 // Domingo primero
         return c
     }
 
@@ -249,7 +249,7 @@ private struct NotesMonthCalendarView: View {
         return mondayBased - 1
     }
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 7)
-    private var headers: [String] { ["L", "M", "M", "J", "V", "S", "D"] }
+    private var headers: [String] { ["D", "L", "M", "M", "J", "V", "S"] }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -282,6 +282,18 @@ private struct NotesMonthCalendarView: View {
                     ZStack(alignment: .topLeading) {
                         Rectangle().fill(Color.clear).frame(height: 42)
                         if let comps = dayComponents(idx), let day = comps.day, let cellDate = calendar.date(from: comps) {
+                            // Selected day background (más destacado)
+                            if calendar.isDate(cellDate, inSameDayAs: current) {
+                                let accent = prefs.theme.accent(for: prefs.tone)
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(accent.opacity(prefs.tone == .white ? 0.32 : 0.38))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .stroke(accent.opacity(0.9), lineWidth: 1.2)
+                                    )
+                                    .padding(2)
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            }
                             // Today ring
                             if calendar.isDateInToday(cellDate) {
                                 Circle()
@@ -290,8 +302,11 @@ private struct NotesMonthCalendarView: View {
                                     .padding(.top, 2)
                                     .padding(.leading, 2)
                             }
+                            // Número del día con contraste cuando está seleccionado
+                            let isSelected = calendar.isDate(cellDate, inSameDayAs: current)
                             Text("\(day)")
-                                .font(.caption.weight(.semibold))
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(isSelected ? Color.white : (prefs.tone == .dark ? Color.white : Color.black))
                                 .padding(.top, 4)
                                 .padding(.leading, 6)
                             if isPeriod(comps) {
@@ -312,8 +327,9 @@ private struct NotesMonthCalendarView: View {
                                     .frame(maxWidth: .infinity, alignment: .trailing)
                             }
                             if hasNotes(cellDate) {
-                                Circle().fill(Color.blue.opacity(0.9))
-                                    .frame(width: 6, height: 6)
+                                Image(systemName: "bell.fill")
+                                    .font(.system(size: 8, weight: .bold))
+                                    .foregroundStyle(Color.yellow)
                                     .padding(.bottom, 4)
                                     .frame(maxHeight: .infinity, alignment: .bottom)
                             }
@@ -401,6 +417,7 @@ private struct TextNoteEditor: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Nota del día")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancelar") { dismiss() } }
