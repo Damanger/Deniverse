@@ -13,6 +13,7 @@ struct AgendaView: View {
     @State private var editor: DaySelection?
     @State private var hourPicker: DaySelection? = nil
     @State private var pendingNoteDate: Date? = nil
+    @State private var seasonalEffect: SeasonalEffect? = SeasonalEffectPicker.pick()
     // Notas integradas
     @State private var searchText: String = ""
     @State private var showTextEditor: Bool = false
@@ -73,12 +74,16 @@ struct AgendaView: View {
             .padding(12)
             .background(RoundedRectangle(cornerRadius: 12).fill(appSurface))
             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(appStroke, lineWidth: 1))
+            .overlay(alignment: .topLeading) {
+                if let eff = seasonalEffect { SeasonalOverlay(effect: eff).clipShape(RoundedRectangle(cornerRadius: 12)) }
+            }
 
             // Notas del día: solo en vista mensual para evitar duplicar en semanal
             if mode == .month {
                 dayNotesSection
             }
         }
+        .onAppear { seasonalEffect = SeasonalEffectPicker.pick() }
         .sheet(item: $editor) { sel in
             DayDrawingEditor(
                 date: sel.date,

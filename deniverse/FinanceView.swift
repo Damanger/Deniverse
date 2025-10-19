@@ -24,19 +24,24 @@ struct FinanceView: View {
     @State private var daySelected: Date = .now
     @State private var showReports = false
 
+    @State private var seasonalEffect: SeasonalEffect? = SeasonalEffectPicker.pick()
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        ZStack(alignment: .topLeading) {
+            if let eff = seasonalEffect { SeasonalOverlay(effect: eff).ignoresSafeArea() }
+            VStack(alignment: .leading, spacing: 16) {
             header
             balanceCard
             quickActions
             filter
             transactionsList
             chartSection
+            }
         }
         .appItalic(prefs.useItalic)
         .appFontDesign(prefs.fontDesign)
         .onReceive(finance.$transactions) { _ in checkLimit() }
-        .onAppear { checkLimit() }
+        .onAppear { checkLimit(); seasonalEffect = SeasonalEffectPicker.pick() }
         .alert("Límite diario excedido", isPresented: $showLimitAlert, actions: {
             Button("Entendido", role: .cancel) {}
         }, message: {
@@ -519,7 +524,7 @@ private struct FinanceReportsView: View {
                 Button { monthStart = Calendar.current.date(byAdding: .month, value: -1, to: monthStart).map { Calendar.current.startOfMonth(for: $0) } ?? monthStart } label: { Image(systemName: "chevron.left") }
                 Spacer()
                 Text(monthTitle(monthStart))
-                    .font(.headline.weight(.bold))
+                    .font(.system(.title3, design: .serif).weight(.black))
                 Spacer()
                 Button { monthStart = Calendar.current.date(byAdding: .month, value: 1, to: monthStart).map { Calendar.current.startOfMonth(for: $0) } ?? monthStart } label: { Image(systemName: "chevron.right") }
             }
@@ -532,15 +537,15 @@ private struct FinanceReportsView: View {
 
             ZStack {
                 if chartKind == .pie {
-                    PieChart(income: income, expense: expense)
+                    DonutChart(income: income, expense: expense)
                         .matchedGeometryEffect(id: "chart", in: anim)
-                        .frame(height: 220)
-                        .padding(.vertical, 6)
+                        .frame(height: 240)
+                        .padding(.vertical, 8)
                 } else {
                     BarsChart(income: income, expense: expense)
                         .matchedGeometryEffect(id: "chart", in: anim)
-                        .frame(height: 220)
-                        .padding(.vertical, 6)
+                        .frame(height: 240)
+                        .padding(.vertical, 8)
                 }
             }
 
@@ -589,30 +594,45 @@ private struct FinanceReportsView: View {
     }
 }
 
-// MARK: - Pie Chart
-private struct PieChart: View {
+// MARK: - Donut/Pie Chart
+private struct DonutChart: View {
     let income: Double
     let expense: Double
+    @State private var progress: CGFloat = 0
 
     var body: some View {
         let total = max(0.0001, income + abs(expense))
         let incRatio = CGFloat(income / total)
         let expRatio = CGFloat(abs(expense) / total)
         ZStack {
-            PieSliceShape(startAngle: .degrees(-90), endAngle: .degrees(-90 + 360 * Double(incRatio)))
-                .fill(Color.green.opacity(0.7))
-            PieSliceShape(startAngle: .degrees(-90 + 360 * Double(incRatio)), endAngle: .degrees(270))
-                .fill(Color.red.opacity(0.7))
-        }
-        .padding(16)
-        .overlay(
-            VStack(spacing: 4) {
-                Text("Ingresos").font(.caption).foregroundStyle(.secondary)
-                Text(String(format: "%.0f%%", incRatio * 100)).font(.title3.weight(.bold))
-                Text("Gastos").font(.caption).foregroundStyle(.secondary)
-                Text(String(format: "%.0f%%", expRatio * 100)).font(.title3.weight(.bold))
+            // Fondo donut
+            Circle().stroke(Color.secondary.opacity(0.15), lineWidth: 18)
+            // Ingresos
+            Circle()
+                .trim(from: 0, to: min(progress, incRatio))
+                .stroke(LinearGradient(colors: [.green.opacity(0.9), .green], startPoint: .top, endPoint: .bottom), style: StrokeStyle(lineWidth: 18, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            // Gastos
+            Circle()
+                .trim(from: 0, to: min(max(0, progress - incRatio), expRatio))
+                .stroke(LinearGradient(colors: [.red.opacity(0.9), .red], startPoint: .top, endPoint: .bottom), style: StrokeStyle(lineWidth: 18, lineCap: .round))
+                .rotationEffect(.degrees(-90 + Double(incRatio) * 360))
+            // Labels en centro
+            VStack(spacing: 8) {
+                HStack(spacing: 12) {
+                    Circle().fill(Color.green.opacity(0.3)).frame(width: 10, height: 10)
+                    Text(String(format: "%.0f%%", incRatio * 100)).font(.title3.weight(.bold))
+                }
+                HStack(spacing: 12) {
+                    Circle().fill(Color.red.opacity(0.3)).frame(width: 10, height: 10)
+                    Text(String(format: "%.0f%%", expRatio * 100)).font(.title3.weight(.bold))
+                }
             }
-        )
+        }
+        .padding(20)
+        .onAppear {
+            withAnimation(.easeOut(duration: 0.9)) { progress = incRatio + expRatio }
+        }
         .transition(.scale)
     }
 }
@@ -635,16 +655,32 @@ private struct PieSliceShape: Shape {
 private struct BarsChart: View {
     let income: Double
     let expense: Double
+    @State private var anim: CGFloat = 0
     var body: some View {
         GeometryReader { geo in
             let maxVal = max(1, income, abs(expense))
             let h = geo.size.height
-            HStack(spacing: 24) {
-                VStack { Spacer(); RoundedRectangle(cornerRadius: 6).fill(Color.green.opacity(0.7)).frame(width: 36, height: CGFloat(income / maxVal) * (h - 24)) }
-                VStack { Spacer(); RoundedRectangle(cornerRadius: 6).fill(Color.red.opacity(0.7)).frame(width: 36, height: CGFloat(abs(expense) / maxVal) * (h - 24)) }
+            ZStack(alignment: .bottom) {
+                // línea base
+                Rectangle().fill(Color.secondary.opacity(0.12)).frame(height: 1).offset(y: -8)
+                HStack(spacing: 32) {
+                    VStack(spacing: 6) {
+                        Text(String(format: "%.0f%%", (income / maxVal) * 100)).font(.caption2).foregroundStyle(.secondary)
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(LinearGradient(colors: [.green.opacity(0.9), .green], startPoint: .top, endPoint: .bottom))
+                            .frame(width: 38, height: anim * CGFloat(income / maxVal) * (h - 40))
+                    }
+                    VStack(spacing: 6) {
+                        Text(String(format: "%.0f%%", (abs(expense) / maxVal) * 100)).font(.caption2).foregroundStyle(.secondary)
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(LinearGradient(colors: [.red.opacity(0.9), .red], startPoint: .top, endPoint: .bottom))
+                            .frame(width: 38, height: anim * CGFloat(abs(expense) / maxVal) * (h - 40))
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         }
+        .onAppear { withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) { anim = 1 } }
         .transition(.opacity.combined(with: .scale))
     }
 }
@@ -655,4 +691,3 @@ private extension Calendar {
         return self.date(from: c) ?? date
     }
 }
-
