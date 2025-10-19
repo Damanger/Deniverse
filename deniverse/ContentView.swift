@@ -7,7 +7,7 @@ struct ContentView: View {
     @State private var searchText: String = ""
     @State private var txFilter: TxFilter = .all
     @State private var activeEntryType: EntryType?
-    @State private var selectedTab: MainTab = .notes
+    @State private var selectedTab: MainTab = .agenda
 
     // MARK: - Action helpers to reduce type-checking complexity
     private func switchToFinanceAndSet(_ type: EntryType) {
@@ -56,6 +56,8 @@ struct ContentView: View {
                     }
                     .padding(.horizontal)
                     .padding(.vertical, 16)
+                    // Extra espacio para que no se tape con el footer
+                    .padding(.bottom, 96)
                 }
                 .scrollDismissesKeyboard(.interactively)
             }
@@ -66,7 +68,7 @@ struct ContentView: View {
     private var tabContent: some View {
         switch selectedTab {
         case .agenda:
-            AgendaView()
+            AgendaView(onIncome: { switchToFinanceAndSet(.income) }, onExpense: { switchToFinanceAndSet(.expense) })
         case .notes:
             notesSection
         case .finance:
@@ -389,7 +391,7 @@ enum MainTab: String, CaseIterable, Identifiable {
         case .agenda: return "Agenda"
         case .notes: return "Notas"
         case .finance: return "Finanzas"
-        case .settings: return "Ajustes"
+        case .settings: return "⚙️"
         }
     }
 
@@ -410,7 +412,7 @@ struct FooterTabBar: View {
 
     var body: some View {
         GeometryReader { geo in
-            let items = MainTab.allCases
+            let items = MainTab.allCases.filter { $0 != .notes }
             // Compute compact layout to avoid excessive gaps
             let count = CGFloat(items.count)
             let spacing: CGFloat = 12
@@ -488,7 +490,8 @@ struct FooterTabBar: View {
 
     // X offset for capsule origin (uses dragIndex if present)
     private func xForCurrent(itemWidth: CGFloat, spacing: CGFloat) -> CGFloat {
-        let baseIdx: CGFloat = dragIndex ?? CGFloat(MainTab.allCases.firstIndex(of: selected) ?? 0)
+        let visible = MainTab.allCases.filter { $0 != .notes }
+        let baseIdx: CGFloat = dragIndex ?? CGFloat(visible.firstIndex(of: selected) ?? 0)
         return baseIdx * (itemWidth + spacing)
     }
 
@@ -847,11 +850,14 @@ struct ContentView_Previews: PreviewProvider {
         Group {
             ContentView()
                 .environmentObject(PreferencesStore())
+                .environmentObject(AgendaStore(filename: "PreviewAgenda.json"))
+                .environmentObject(FinanceStore(filename: "PreviewFinance.json"))
                 .preferredColorScheme(.light)
             ContentView()
                 .environmentObject(PreferencesStore())
+                .environmentObject(AgendaStore(filename: "PreviewAgenda.json"))
+                .environmentObject(FinanceStore(filename: "PreviewFinance.json"))
                 .preferredColorScheme(.dark)
         }
     }
 }
-

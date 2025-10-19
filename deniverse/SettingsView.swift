@@ -176,7 +176,7 @@ struct SettingsView: View {
         .scrollContentBackground(.hidden)
         .listRowBackground(glassBG(14))
         .foregroundStyle(prefs.tone == .dark ? .white : .black)
-        .navigationTitle("Ajustes")
+        .navigationTitle("⚙️")
         // Usa esquema de color según Tono seleccionado
         .tint(prefs.theme.accent(for: prefs.tone))
         .preferredColorScheme(prefs.tone == .dark ? .dark : .light)
@@ -231,11 +231,17 @@ private extension SettingsView {
         .preferredColorScheme(isDark ? .dark : .light)
     }
 
-    // Light-looking glass for settings (igual en blanco y obscuro)
+    // Light-looking glass tuned por Tono
     func glassBG(_ corner: CGFloat = 12) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: corner).fill(.regularMaterial)
-            RoundedRectangle(cornerRadius: corner).fill(Color.black.opacity(0.10))
+            // En tono blanco, usa un velo muy tenue y claro
+            if prefs.tone == .white {
+                RoundedRectangle(cornerRadius: corner).fill(Color.white.opacity(0.04))
+            } else {
+                // En oscuro, un velo blanco tenue para mayor contraste
+                RoundedRectangle(cornerRadius: corner).fill(Color.white.opacity(0.06))
+            }
         }
     }
 }

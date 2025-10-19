@@ -22,6 +22,7 @@ struct FinanceView: View {
     enum DayMode: String, CaseIterable, Identifiable { case all, today, specific; var id: String { rawValue }; var title: String { self == .all ? "Todos" : (self == .today ? "Hoy" : "Fecha") } }
     @State private var dayMode: DayMode = .all
     @State private var daySelected: Date = .now
+    @State private var showReports = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -41,6 +42,12 @@ struct FinanceView: View {
         }, message: {
             Text("Has superado tu límite diario de gasto.")
         })
+        .popover(isPresented: $showReports) {
+            FinanceReportsView()
+                .environmentObject(prefs)
+                .environmentObject(finance)
+                .frame(minWidth: 360, minHeight: 420)
+        }
     }
 
     // MARK: - Partes
@@ -49,7 +56,7 @@ struct FinanceView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Acciones rápidas").font(.headline)
             HStack(spacing: 12) {
-                ActionButton(title: "Reportes", systemImage: "chart.pie.fill", tint: .orange, action: onReports, useWhiteBackground: true)
+                ActionButton(title: "Reportes", systemImage: "chart.pie.fill", tint: .orange, action: { showReports = true; onReports() }, useWhiteBackground: true)
                 ActionButton(title: "Ingreso", systemImage: "plus", tint: .green, action: onIncome, useWhiteBackground: true)
                 ActionButton(title: "Gasto", systemImage: "minus", tint: .red, action: onExpense, useWhiteBackground: true)
             }
@@ -490,3 +497,162 @@ struct FinanceEditView: View {
         dismiss()
     }
 }
+
+// MARK: - Reports (Pie / Bar) Popover
+private struct FinanceReportsView: View {
+    @EnvironmentObject private var prefs: PreferencesStore
+    @EnvironmentObject private var finance: FinanceStore
+
+    enum ChartKind: String, CaseIterable, Identifiable { case pie, bars; var id: String { rawValue }; var title: String { self == .pie ? "Pastel" : "Barras" } }
+
+    @State private var chartKind: ChartKind = .pie
+    @State private var monthStart: Date = Calendar.current.startOfMonth(for: Date())
+    @Namespace private var anim
+
+    var body: some View {
+        let summary = monthSummary(for: monthStart)
+        let income = summary.income
+        let expense = abs(summary.expense)
+        VStack(spacing: 14) {
+            // Header with month switcher
+            HStack(spacing: 8) {
+                Button { monthStart = Calendar.current.date(byAdding: .month, value: -1, to: monthStart).map { Calendar.current.startOfMonth(for: $0) } ?? monthStart } label: { Image(systemName: "chevron.left") }
+                Spacer()
+                Text(monthTitle(monthStart))
+                    .font(.headline.weight(.bold))
+                Spacer()
+                Button { monthStart = Calendar.current.date(byAdding: .month, value: 1, to: monthStart).map { Calendar.current.startOfMonth(for: $0) } ?? monthStart } label: { Image(systemName: "chevron.right") }
+            }
+            .padding(.bottom, 4)
+
+            Picker("Tipo", selection: $chartKind) {
+                ForEach(ChartKind.allCases) { k in Text(k.title).tag(k) }
+            }
+            .pickerStyle(.segmented)
+
+            ZStack {
+                if chartKind == .pie {
+                    PieChart(income: income, expense: expense)
+                        .matchedGeometryEffect(id: "chart", in: anim)
+                        .frame(height: 220)
+                        .padding(.vertical, 6)
+                } else {
+                    BarsChart(income: income, expense: expense)
+                        .matchedGeometryEffect(id: "chart", in: anim)
+                        .frame(height: 220)
+                        .padding(.vertical, 6)
+                }
+            }
+
+            // Legend and numbers
+            HStack(spacing: 14) {
+                legendItem(color: .green, title: "Ingresos", value: prefs.currencyString(income))
+                legendItem(color: .red, title: "Gastos", value: prefs.currencyString(expense))
+            }
+            .font(.footnote)
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .background(prefs.theme.surface(for: prefs.tone))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(prefs.theme.stroke(for: prefs.tone), lineWidth: 1))
+        .animation(.spring(response: 0.35, dampingFraction: 0.9), value: chartKind)
+        .animation(.spring(response: 0.35, dampingFraction: 0.9), value: monthStart)
+    }
+
+    // MARK: - Data helpers
+    private func monthSummary(for start: Date) -> (income: Double, expense: Double) {
+        let cal = Calendar.current
+        let comps = cal.dateComponents([.year, .month], from: start)
+        let ms = cal.date(from: comps) ?? start
+        let me = cal.date(byAdding: DateComponents(month: 1, day: -1), to: ms) ?? ms
+        let tx = finance.transactions.filter { cal.component(.year, from: $0.date) == cal.component(.year, from: ms) && cal.component(.month, from: $0.date) == cal.component(.month, from: ms) }
+        let inc = tx.filter { $0.amount > 0 }.map { $0.amount }.reduce(0, +)
+        let exp = tx.filter { $0.amount < 0 }.map { $0.amount }.reduce(0, +)
+        _ = me // not used further; kept for clarity
+        return (inc, exp)
+    }
+
+    private func monthTitle(_ d: Date) -> String {
+        let df = DateFormatter(); df.locale = Locale(identifier: "es_ES"); df.dateFormat = "LLLL yyyy"; let s = df.string(from: d)
+        return s.prefix(1).uppercased() + s.dropFirst()
+    }
+
+    private func legendItem(color: Color, title: String, value: String) -> some View {
+        HStack(spacing: 6) {
+            Circle().fill(color.opacity(prefs.tone == .white ? 0.25 : 0.35)).frame(width: 12, height: 12)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).foregroundStyle(.secondary)
+                Text(value).font(.subheadline.weight(.semibold))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+// MARK: - Pie Chart
+private struct PieChart: View {
+    let income: Double
+    let expense: Double
+
+    var body: some View {
+        let total = max(0.0001, income + abs(expense))
+        let incRatio = CGFloat(income / total)
+        let expRatio = CGFloat(abs(expense) / total)
+        ZStack {
+            PieSliceShape(startAngle: .degrees(-90), endAngle: .degrees(-90 + 360 * Double(incRatio)))
+                .fill(Color.green.opacity(0.7))
+            PieSliceShape(startAngle: .degrees(-90 + 360 * Double(incRatio)), endAngle: .degrees(270))
+                .fill(Color.red.opacity(0.7))
+        }
+        .padding(16)
+        .overlay(
+            VStack(spacing: 4) {
+                Text("Ingresos").font(.caption).foregroundStyle(.secondary)
+                Text(String(format: "%.0f%%", incRatio * 100)).font(.title3.weight(.bold))
+                Text("Gastos").font(.caption).foregroundStyle(.secondary)
+                Text(String(format: "%.0f%%", expRatio * 100)).font(.title3.weight(.bold))
+            }
+        )
+        .transition(.scale)
+    }
+}
+
+private struct PieSliceShape: Shape {
+    var startAngle: Angle
+    var endAngle: Angle
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let r = min(rect.width, rect.height) / 2
+        p.move(to: center)
+        p.addArc(center: center, radius: r, startAngle: startAngle, endAngle: endAngle, clockwise: false)
+        p.closeSubpath()
+        return p
+    }
+}
+
+// MARK: - Bars Chart
+private struct BarsChart: View {
+    let income: Double
+    let expense: Double
+    var body: some View {
+        GeometryReader { geo in
+            let maxVal = max(1, income, abs(expense))
+            let h = geo.size.height
+            HStack(spacing: 24) {
+                VStack { Spacer(); RoundedRectangle(cornerRadius: 6).fill(Color.green.opacity(0.7)).frame(width: 36, height: CGFloat(income / maxVal) * (h - 24)) }
+                VStack { Spacer(); RoundedRectangle(cornerRadius: 6).fill(Color.red.opacity(0.7)).frame(width: 36, height: CGFloat(abs(expense) / maxVal) * (h - 24)) }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        }
+        .transition(.opacity.combined(with: .scale))
+    }
+}
+
+private extension Calendar {
+    func startOfMonth(for date: Date) -> Date {
+        let c = dateComponents([.year, .month], from: date)
+        return self.date(from: c) ?? date
+    }
+}
+

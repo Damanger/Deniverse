@@ -29,6 +29,7 @@ struct DayEntry: Codable {
     var reminder: Date?
     var notes: [NoteItem]? // notas creadas desde Notas
     var hourly: [Int: String]? // clave: hora (0-23)
+    var periodDelayed: Bool? // marca de retraso de ciclo
 }
 
 final class AgendaStore: ObservableObject {
@@ -158,6 +159,20 @@ final class AgendaStore: ObservableObject {
         entries[k] = e
         reloadFromDisk()
         DispatchQueue.main.async { self.objectWillChange.send() }
+    }
+
+    // MARK: - Period delay flags
+    func setPeriodDelay(on date: Date, delayed: Bool) {
+        let k = key(for: date)
+        var e = entries[k] ?? DayEntry()
+        e.periodDelayed = delayed ? true : nil
+        entries[k] = e
+        reloadFromDisk()
+        DispatchQueue.main.async { self.objectWillChange.send() }
+    }
+
+    func isPeriodDelayed(on date: Date) -> Bool {
+        entries[key(for: date)]?.periodDelayed ?? false
     }
 
     func deleteNote(on date: Date, id: UUID) {

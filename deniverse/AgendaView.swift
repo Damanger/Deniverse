@@ -1,5 +1,6 @@
 import SwiftUI
 import PencilKit
+import UserNotifications
 import UniformTypeIdentifiers
 
 enum AgendaMode { case month, week }
@@ -11,31 +12,71 @@ struct AgendaView: View {
     @EnvironmentObject private var agenda: AgendaStore
     @State private var editor: DaySelection?
     @State private var hourPicker: DaySelection? = nil
+    @State private var pendingNoteDate: Date? = nil
+    // Notas integradas
+    @State private var searchText: String = ""
+    @State private var showTextEditor: Bool = false
+    @State private var editingNote: NoteItem? = nil
+    @State private var showCycleAlert: Bool = false
+    @State private var cycleAlertDate: Date = Date()
+
+    // Quick actions hooks
+    let onIncome: () -> Void
+    let onExpense: () -> Void
+
+    init(onIncome: @escaping () -> Void = {}, onExpense: @escaping () -> Void = {}) {
+        self.onIncome = onIncome
+        self.onExpense = onExpense
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             header
+            agendaSearchBar
+            agendaQuickActions
             Group {
-                switch mode {
-                case .month:
-                    MonthCalendarView(date: $selectedDate, onDayTap: { d in hourPicker = DaySelection(date: d) })
+                VStack(alignment: .leading, spacing: 10) {
+                    switch mode {
+                    case .month:
+                        VerticalMonthsCalendarView(focusDate: $selectedDate, selected: $selectedDate, onDayTap: { d in
+                            let cal = Calendar.current
+                            if cal.isDate(d, inSameDayAs: selectedDate) {
+                                // Segundo tap en el mismo día → abrir horas del día
+                                hourPicker = DaySelection(date: d)
+                            } else {
+                                // Primer tap → seleccionar
+                                selectedDate = d
+                            }
+                        })
                         .environmentObject(prefs)
-                case .week:
-                    WeeklyPlannerView(
-                        date: $selectedDate,
-                        drawingFor: { date in
-                            if let data = agenda.entry(for: date)?.drawingData, let d = try? PKDrawing(data: data) { return d }
-                            return nil
-                        },
-                        onDayTap: { d in hourPicker = DaySelection(date: d) }
-                    )
-                    .environmentObject(prefs)
+                        .environmentObject(agenda)
+                        .frame(height: 640)
+                    case .week:
+                        WeeklyPlannerView(
+                            date: $selectedDate,
+                            drawingFor: { date in
+                                if let data = agenda.entry(for: date)?.drawingData, let d = try? PKDrawing(data: data) { return d }
+                                return nil
+                            },
+                            onDayTap: { d in
+                                // Selecciona el día para que "+Nuevo" use esa fecha
+                                selectedDate = d
+                            }
+                        )
+                        .environmentObject(prefs)
+                    }
+                    if prefs.isWoman { cycleLegend }
                 }
             }
             .frame(maxWidth: .infinity)
             .padding(12)
             .background(RoundedRectangle(cornerRadius: 12).fill(appSurface))
             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(appStroke, lineWidth: 1))
+
+            // Notas del día: solo en vista mensual para evitar duplicar en semanal
+            if mode == .month {
+                dayNotesSection
+            }
         }
         .sheet(item: $editor) { sel in
             DayDrawingEditor(
@@ -56,6 +97,58 @@ struct AgendaView: View {
                 .environmentObject(prefs)
                 .environmentObject(agenda)
         }
+        // Editor de notas (integrado)
+        .sheet(isPresented: $showTextEditor) {
+            if let n = editingNote {
+                AgendaTextNoteEditor(
+                    date: selectedDate,
+                    initialText: n.text,
+                    initialReminder: n.reminder,
+                    initialCategory: n.category,
+                    initialDate: (pendingNoteDate ?? selectedDate),
+                    allowDateChange: false,
+                    onSave: { noteDay, text, category, notify, when in
+                        let reminder = notify ? (when ?? noteDay) : nil
+                        agenda.updateNote(on: noteDay, id: n.id, text: text, category: category, reminder: reminder)
+                        if let r = reminder { scheduleNotification(at: r, title: "Nota", body: text) }
+                    },
+                    onDelete: {
+                        agenda.deleteNote(on: selectedDate, id: n.id)
+                    }
+                )
+                .environmentObject(prefs)
+            } else {
+                AgendaTextNoteEditor(
+                    date: selectedDate,
+                    initialDate: (pendingNoteDate ?? selectedDate),
+                    allowDateChange: true,
+                    onSave: { noteDay, text, category, notify, when in
+                        let reminder = notify ? (when ?? noteDay) : nil
+                        agenda.addNote(on: noteDay, text: text, category: category, reminder: reminder)
+                        if let r = reminder { scheduleNotification(at: r, title: "Nota", body: text) }
+                        selectedDate = noteDay
+                    },
+                    onDelete: {}
+                )
+                .environmentObject(prefs)
+            }
+        }
+        // Alerta de inicio de ciclo
+        .alert("Iniciar ciclo", isPresented: $showCycleAlert) {
+            Button("Retraso") {
+                agenda.setPeriodDelay(on: cycleAlertDate, delayed: true)
+                prefs.lastCycleAlertDayKey = dayKey(cycleAlertDate)
+            }
+            Button("Confirmar") {
+                prefs.lastPeriodStart = cycleAlertDate
+                prefs.lastCycleAlertDayKey = dayKey(cycleAlertDate)
+                agenda.setPeriodDelay(on: cycleAlertDate, delayed: false)
+            }
+            Button("Cancelar", role: .cancel) {}
+        } message: {
+            Text("¿Quieres marcar hoy como inicio de ciclo?")
+        }
+        .onAppear { checkCycleStartForToday() }
     }
 
     private var header: some View {
@@ -104,6 +197,167 @@ struct AgendaView: View {
     }
 
     private func key(for date: Date) -> String { agenda.key(for: date) }
+}
+
+// MARK: - Search + Quick Actions + Day Notes
+
+private extension AgendaView {
+    var agendaSearchBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(subtleForeground)
+            TextField("Buscar en notas del día...", text: $searchText)
+                .textInputAutocapitalization(.none)
+                .autocorrectionDisabled(true)
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12).fill(appSurface))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(appStroke, lineWidth: 1))
+        .overlay(alignment: .trailing) {
+            if !searchText.isEmpty {
+                Button { withAnimation(.easeOut(duration: 0.15)) { searchText = "" } } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(subtleForeground)
+                }
+                .padding(.trailing, 10)
+                .accessibilityLabel("Limpiar búsqueda")
+            }
+        }
+    }
+
+    var agendaQuickActions: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Acciones rápidas").font(.headline)
+            HStack(spacing: 12) {
+                ActionButton(title: "Nuevo", systemImage: "plus", tint: .orange, action: { newNote() }, useWhiteBackground: true)
+                ActionButton(title: "Ingreso", systemImage: "plus", tint: .green, action: onIncome, useWhiteBackground: true)
+                ActionButton(title: "Gasto", systemImage: "minus", tint: .red, action: onExpense, useWhiteBackground: true)
+            }
+        }
+    }
+
+    // Leyenda de ciclo (periodo y fértil)
+    var cycleLegend: some View {
+        HStack(spacing: 14) {
+            HStack(spacing: 6) {
+                Image(systemName: "drop.fill").foregroundStyle(.red)
+                Text("Periodo")
+                    .font(.footnote)
+                    .foregroundStyle(subtleForeground)
+            }
+            HStack(spacing: 6) {
+                Circle().fill(Color.green).frame(width: 8, height: 8)
+                Text("Ventana fértil")
+                    .font(.footnote)
+                    .foregroundStyle(subtleForeground)
+            }
+        }
+        .padding(.top, 6)
+    }
+
+    var dayNotesSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            let items = agenda.notes(for: selectedDate).filter { n in
+                let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                return q.isEmpty || n.text.lowercased().contains(q)
+            }
+            if !items.isEmpty { Text("Notas del día").font(.headline) }
+            ForEach(items) { n in
+                HStack(alignment: .top, spacing: 10) {
+                    Label(n.category.displayName, systemImage: "folder")
+                        .font(.caption2.weight(.semibold))
+                        .labelStyle(.titleAndIcon)
+                        .foregroundStyle(subtleForeground)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(n.text).font(.subheadline).lineLimit(3)
+                        HStack(spacing: 6) {
+                            if let r = n.reminder {
+                                Image(systemName: "bell.fill").foregroundStyle(.yellow)
+                                Text(shortDate(r)).font(.caption).foregroundStyle(subtleForeground)
+                            }
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    Button { editingNote = n; showTextEditor = true } label: { Image(systemName: "square.and.pencil") }
+                        .buttonStyle(.plain)
+                }
+                .padding(8)
+                .background(RoundedRectangle(cornerRadius: 10).fill(appSurface))
+                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(appStroke, lineWidth: 1))
+            }
+            if items.isEmpty {
+                HStack(spacing: 10) {
+                    Image(systemName: "tray")
+                        .foregroundStyle(.secondary)
+                    Text("Sin notas para este día")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 10).fill(appSurface))
+                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(appStroke, lineWidth: 1))
+            }
+        }
+    }
+
+    // Actions
+    func newNote() {
+        let cal = Calendar.current
+        pendingNoteDate = cal.date(bySettingHour: 12, minute: 0, second: 0, of: selectedDate) ?? selectedDate
+        editingNote = nil
+        showTextEditor = true
+    }
+
+    // Local notification (copied from NotesView)
+    func scheduleNotification(at date: Date, title: String, body: String) {
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+            guard granted else { return }
+            let content = UNMutableNotificationContent()
+            content.title = title
+            content.body = body
+            content.sound = .default
+            let triggerDate = Calendar.current.dateComponents([.year,.month,.day,.hour,.minute,.second], from: date)
+            let trigger = UNCalendarNotificationTrigger(dateMatching: triggerDate, repeats: false)
+            let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
+            center.add(request, withCompletionHandler: nil)
+        }
+    }
+
+    func shortDate(_ d: Date) -> String {
+        let df = DateFormatter(); df.dateStyle = .medium; df.timeStyle = .short; return df.string(from: d)
+    }
+    
+    // Normaliza a mediodía para evitar problemas de DST al comparar días
+    func midday(_ date: Date) -> Date {
+        let cal = Calendar.current
+        return cal.date(bySettingHour: 12, minute: 0, second: 0, of: date) ?? date
+    }
+
+    // Checa si hoy es inicio esperado de ciclo y muestra alerta 1 vez
+    func checkCycleStartForToday() {
+        guard prefs.isWoman else { return }
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        let key = dayKey(today)
+        if prefs.lastCycleAlertDayKey == key { return }
+        let start = cal.startOfDay(for: prefs.lastPeriodStart)
+        let diff = cal.dateComponents([.day], from: start, to: today).day ?? 0
+        if diff < 0 { return }
+        let cycle = max(1, prefs.cycleLength)
+        let cycles = diff / cycle
+        guard let expected = cal.date(byAdding: .day, value: cycles * cycle, to: start) else { return }
+        if cal.isDate(expected, inSameDayAs: today) {
+            cycleAlertDate = today
+            showCycleAlert = true
+        }
+    }
+
+    func dayKey(_ d: Date) -> String {
+        let c = Calendar.current.dateComponents([.year, .month, .day], from: d)
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+    }
 }
 
 // MARK: - Large Month Grid Calendar
@@ -300,6 +554,590 @@ private struct MonthCalendarView: View {
     }
 }
 
+// MARK: - Vertical Multi-Month Calendar (Apple-like)
+
+private struct VerticalMonthsCalendarView: View {
+    @EnvironmentObject private var prefs: PreferencesStore
+    @EnvironmentObject private var agenda: AgendaStore
+    @Binding var focusDate: Date
+    @Binding var selected: Date
+    var onDayTap: (Date) -> Void
+
+    @State private var months: [Date] = [] // month start dates
+    @State private var currentMonth: Date = Calendar.current.startOfMonth(for: .now)
+    @State private var showYearPicker = false
+    @State private var yearAnchor: Date = Calendar.current.startOfMonth(for: .now)
+    private var isPreview: Bool { ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" }
+    @State private var didInitialPosition: Bool = false
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(alignment: .leading, spacing: 24, pinnedViews: [.sectionHeaders]) {
+                    ForEach(months, id: \.self) { m in
+                        Section(header: MonthPinnedHeader(monthStart: m, onYearTap: {
+                            yearAnchor = m
+                            showYearPicker = true
+                        }, onToday: {
+                            goToToday(proxy: proxy)
+                        })) {
+                            MonthGridSection(monthStart: m, selected: $selected, onDayTap: onDayTap)
+                        }
+                        .id(monthID(m))
+                        .onAppear {
+                            // Extiende meses en app real con límites de seguridad
+                            guard !isPreview, didInitialPosition else { return }
+                            if months.count < 180 {
+                                if m == months.first { prependMonths(count: 12, anchor: m, proxy: proxy) }
+                                if m == months.last { appendMonths(count: 12) }
+                            }
+                        }
+                    }
+                }
+                .padding(.top, 4)
+            }
+            .onAppear {
+                ensureVisible(date: focusDate, proxy: proxy, animated: false)
+                // Marca que ya centramos al mes actual; evita que el primer onAppear del primer mes
+                // dispare expansión hacia el pasado antes de posicionar el scroll.
+                DispatchQueue.main.async { didInitialPosition = true }
+            }
+            .onChange(of: focusDate) { _, newVal in ensureVisible(date: newVal, proxy: proxy, animated: true) }
+            .sheet(isPresented: $showYearPicker) {
+                YearOverviewView(initialYear: Calendar.current.component(.year, from: yearAnchor), selectedMonth: yearAnchor) { picked in
+                    let m = Calendar.current.startOfMonth(for: picked)
+                    focusDate = m
+                    currentMonth = m
+                    months = generateMonths(around: m)
+                    // Scroll will occur via onChange(focusDate)
+                    showYearPicker = false
+                }
+                .environmentObject(prefs)
+                .interactiveDismissDisabled(true)
+            }
+        }
+    }
+
+    // MARK: - Helpers
+    private func generateMonths(around center: Date) -> [Date] {
+        let cal = Calendar.current
+        let base = cal.startOfMonth(for: center)
+        // Ventana inicial: Preview ±2, App ±6 (se expande al desplazarse)
+        let range = isPreview ? (-2...2) : (-6...6)
+        return range.compactMap { cal.date(byAdding: .month, value: $0, to: base) }.map { cal.startOfMonth(for: $0) }
+    }
+
+    private func monthTitle(_ date: Date) -> String {
+        let df = DateFormatter(); df.locale = Locale(identifier: "es_ES"); df.dateFormat = "LLLL"; let s = df.string(from: date)
+        return s.prefix(1).uppercased() + s.dropFirst()
+    }
+
+    private func monthID(_ date: Date) -> String {
+        let c = Calendar.current.dateComponents([.year, .month], from: date)
+        return String(format: "%04d-%02d", c.year ?? 0, c.month ?? 0)
+    }
+
+    private func yearString(for date: Date) -> String { String(Calendar.current.component(.year, from: date)) }
+
+    private func nearestIndexToCurrent() -> Int? { months.firstIndex(of: currentMonth) }
+
+    private func goToToday(proxy: ScrollViewProxy) {
+        let today = midday(Date())
+        focusDate = today
+        selected = today
+        ensureVisible(date: today, proxy: proxy, animated: true)
+    }
+
+    private func ensureVisible(date: Date, proxy: ScrollViewProxy, animated: Bool) {
+        let norm = midday(date)
+        let target = Calendar.current.startOfMonth(for: norm)
+        currentMonth = target
+        if !months.contains(target) { months = generateMonths(around: target) }
+        let action = { proxy.scrollTo(monthID(target), anchor: .top) }
+        if animated {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) { action() }
+        } else {
+            action()
+        }
+        // En la siguiente vuelta de runloop, repite el scroll por si el layout cambió
+        DispatchQueue.main.async {
+            if animated {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) { action() }
+            } else { action() }
+        }
+    }
+
+    private func midday(_ date: Date) -> Date {
+        let cal = Calendar.current
+        return cal.date(bySettingHour: 12, minute: 0, second: 0, of: date) ?? date
+    }
+
+    private func prependMonths(count: Int, anchor: Date, proxy: ScrollViewProxy) {
+        guard let first = months.first else { return }
+        let cal = Calendar.current
+        let adds = (1...count).compactMap { cal.date(byAdding: .month, value: -$0, to: first) }.map { cal.startOfMonth(for: $0) }.reversed()
+        var newOnes: [Date] = []
+        for m in adds where !months.contains(m) { newOnes.append(m) }
+        guard !newOnes.isEmpty else { return }
+        let anchorID = monthID(anchor)
+        months.insert(contentsOf: newOnes, at: 0)
+        // Keep visual position by scrolling back to the same anchor month
+        DispatchQueue.main.async { proxy.scrollTo(anchorID, anchor: .top) }
+    }
+
+    private func appendMonths(count: Int) {
+        guard let last = months.last else { return }
+        let cal = Calendar.current
+        let adds = (1...count).compactMap { cal.date(byAdding: .month, value: $0, to: last) }.map { cal.startOfMonth(for: $0) }
+        for m in adds where !months.contains(m) { months.append(m) }
+    }
+}
+
+// Sticky header for each month section
+private struct MonthPinnedHeader: View {
+    @EnvironmentObject private var prefs: PreferencesStore
+    let monthStart: Date
+    let onYearTap: () -> Void
+    let onToday: () -> Void
+    private var year: String { String(Calendar.current.component(.year, from: monthStart)) }
+    private var monthName: String {
+        // Abreviaturas fijas sin punto: Ene, Feb, Mar, Abr, May, Jun, Jul, Ago, Sep, Oct, Nov, Dic
+        let abbr = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"]
+        let m = Calendar.current.component(.month, from: monthStart)
+        let idx = max(1, min(12, m)) - 1
+        return abbr[idx]
+    }
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            // Clear background so el card mantiene su color y contraste
+            Color.clear
+            HStack(spacing: 10) {
+                Button(action: onYearTap) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "calendar")
+                        Text(year)
+                    }
+                    .font(.system(.subheadline, design: .rounded).weight(.bold))
+                    .foregroundStyle(prefs.tone == .dark ? Color.black : Color.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(
+                        Capsule().fill(prefs.theme.accent(for: prefs.tone))
+                    )
+                    .shadow(color: .black.opacity(0.15), radius: 6, y: 3)
+                }
+                Text(monthName)
+                    .font(.system(size: 34, weight: .black, design: .serif)).appItalic(prefs.useItalic)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .padding(.vertical, 2)
+                Spacer()
+                Button(action: onToday) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "scope")
+                        Text("Hoy")
+                    }
+                    .font(.system(.subheadline, design: .rounded).weight(.bold))
+                    .foregroundStyle(prefs.tone == .dark ? Color.black : Color.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Capsule().fill(prefs.theme.accent(for: prefs.tone)))
+                    .shadow(color: .black.opacity(0.15), radius: 6, y: 3)
+                }
+            }
+            .padding(.vertical, 6)
+        }
+    }
+}
+
+// One month section with large day cells + indicators
+private struct MonthGridSection: View {
+    @EnvironmentObject private var prefs: PreferencesStore
+    @EnvironmentObject private var agenda: AgendaStore
+    let monthStart: Date
+    @Binding var selected: Date
+    var onDayTap: (Date) -> Void
+
+    private var calendar: Calendar { var c = Calendar(identifier: .gregorian); c.locale = Locale(identifier: "es_ES"); c.firstWeekday = 1; return c }
+    private var appStroke: Color { prefs.theme.stroke(for: prefs.tone) }
+
+    private var daysInMonth: Int { calendar.range(of: .day, in: .month, for: monthStart)!.count }
+    private var startWeekdayOffset: Int {
+        let w = calendar.component(.weekday, from: monthStart)
+        return (w - calendar.firstWeekday + 7) % 7
+    }
+    private var totalCells: Int { let rows = Int(ceil(Double(startWeekdayOffset + daysInMonth) / 7.0)); return rows * 7 }
+
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 7)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            // Weekday initials
+            LazyVGrid(columns: columns, spacing: 0) {
+                ForEach(weekdayHeaders.indices, id: \.self) { i in
+                    Text(weekdayHeaders[i])
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                        .foregroundStyle(.primary)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(weekdayBG(i))
+                                .padding(.horizontal, 10)
+                        )
+                }
+            }
+
+            // Day cells grid
+            LazyVGrid(columns: columns, spacing: 8) {
+                ForEach(0..<totalCells, id: \.self) { idx in
+                    if let date = dateForCell(idx) {
+                        DayCell(date: date, isInMonth: true, onTap: { onDayTap(date) })
+                    } else {
+                        DayCell(date: nil, isInMonth: false, onTap: {})
+                    }
+                }
+            }
+        }
+    }
+
+    private var weekdayHeaders: [String] { ["D", "L", "M", "M", "J", "V", "S"] }
+    private func weekdayBG(_ index: Int) -> Color {
+        // Subtle unique tint per weekday
+        let palette: [Color] = [.red, .cyan, .teal, .indigo, .orange, .green, .blue]
+        let base = palette[index % palette.count]
+        return base.opacity(prefs.tone == .dark ? 0.22 : 0.15)
+    }
+
+    private func dateForCell(_ idx: Int) -> Date? {
+        let day = idx - startWeekdayOffset + 1
+        guard day >= 1 && day <= daysInMonth else { return nil }
+        return calendar.date(byAdding: .day, value: day - 1, to: monthStart)
+    }
+
+    // Day cell view
+    @ViewBuilder
+    private func DayCell(date: Date?, isInMonth: Bool, onTap: @escaping () -> Void) -> some View {
+        let height: CGFloat = 98
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.clear)
+            if let d = date, isInMonth {
+                let isToday = Calendar.current.isDateInToday(d)
+                let isSelected = Calendar.current.isDate(d, inSameDayAs: selected)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        ZStack {
+                            if isToday {
+                                Circle()
+                                    .fill(prefs.theme.accent(for: prefs.tone))
+                                    .shadow(color: .black.opacity(0.25), radius: 6, y: 3)
+                            } else if isSelected {
+                                Circle()
+                                    .stroke(prefs.theme.accent(for: prefs.tone), lineWidth: 2)
+                            }
+                            Text(String(Calendar.current.component(.day, from: d)))
+                                .font(.system(.subheadline, design: .serif).weight(isToday ? .heavy : .semibold)).appItalic(prefs.useItalic)
+                                .foregroundStyle(isToday ? Color.white : (prefs.tone == .dark ? .white : .black))
+                        }
+                        .frame(width: 30, height: 30)
+                        Spacer(minLength: 0)
+                    }
+                    // Cycle tracking markers (period / fertile)
+                    if prefs.isWoman {
+                        if isPeriodDate(d) {
+                            Image(systemName: "drop.fill")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(.red)
+                                .padding(.leading, 4)
+                        } else if isFertileDate(d) {
+                            Circle()
+                                .fill(Color.green.opacity(0.9))
+                                .frame(width: 7, height: 7)
+                                .padding(.leading, 6)
+                        } else if agenda.isPeriodDelayed(on: d) {
+                            Text("🕒").font(.system(size: 11)).padding(.leading, 4)
+                        }
+                    }
+                    // Notes/text chips
+                    chips(for: d)
+                        .padding(.trailing, 4)
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        .frame(height: height)
+        .contentShape(Rectangle())
+        .onTapGesture { if isInMonth { onTap() } }
+    }
+
+    // Indicators
+    @ViewBuilder
+    private func chips(for date: Date) -> some View {
+        let notes = agenda.notes(for: date)
+        let dayText = agenda.entry(for: date)?.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let showText = !dayText.isEmpty
+        let limit = 3
+        VStack(alignment: .leading, spacing: 2) {
+            if showText {
+                pill(icon: "doc.text", text: String(dayText.prefix(12)), color: .teal)
+            }
+            ForEach(Array(notes.prefix(limit)).indices, id: \.self) { i in
+                let n = notes[i]
+                pill(icon: icon(for: n.category), text: String(n.category.displayName.prefix(10)), color: color(for: n.category))
+            }
+            if (notes.count + (showText ? 1 : 0)) == 0 {
+                // If no content at all but hourly or drawing exists, show a small hint dot row
+                if hasDrawing(date) || hasHourly(date) {
+                    HStack(spacing: 4) {
+                        if hasDrawing(date) { Circle().fill(Color.purple.opacity(0.7)).frame(width: 6, height: 6) }
+                        if hasHourly(date) { Circle().fill(Color.orange.opacity(0.7)).frame(width: 6, height: 6) }
+                    }
+                }
+            }
+        }
+    }
+
+    private func pill(icon: String, text: String, color: Color) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon).font(.system(size: 10, weight: .semibold))
+            Text(text).font(.system(size: 11, weight: .semibold, design: .rounded)).lineLimit(1)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(Capsule(style: .continuous).fill(color.opacity(prefs.tone == .dark ? 0.22 : 0.16)))
+        .overlay(Capsule(style: .continuous).stroke(appStroke, lineWidth: 0.8))
+        .foregroundStyle(prefs.tone == .dark ? Color.white : Color.black)
+    }
+
+    private func color(for category: NoteCategory) -> Color {
+        switch category {
+        case .personal: return .purple
+        case .work: return .blue
+        case .finance: return .green
+        case .health: return .red
+        case .other: return .gray
+        }
+    }
+    private func icon(for category: NoteCategory) -> String {
+        switch category {
+        case .personal: return "person"
+        case .work: return "briefcase"
+        case .finance: return "banknote"
+        case .health: return "heart.fill"
+        case .other: return "tag"
+        }
+    }
+    private func hasAnyContent(on d: Date) -> Bool {
+        if let e = agenda.entry(for: d) { if let t = e.text, !t.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }; if let n = e.notes, !n.isEmpty { return true }; if e.drawingData != nil { return true }; if let h = e.hourly, !h.isEmpty { return true } }
+        return false
+    }
+    private func hasDrawing(_ d: Date) -> Bool { agenda.entry(for: d)?.drawingData != nil }
+    private func hasHourly(_ d: Date) -> Bool { (agenda.entry(for: d)?.hourly?.isEmpty == false) }
+
+    // MARK: - Cycle helpers (period / fertile)
+    private func isPeriodDate(_ d: Date) -> Bool {
+        guard prefs.isWoman else { return false }
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: prefs.lastPeriodStart)
+        let day = cal.startOfDay(for: d)
+        let diff = cal.dateComponents([.day], from: start, to: day).day ?? 0
+        let cycle = max(1, prefs.cycleLength)
+        let mod = ((diff % cycle) + cycle) % cycle
+        return mod >= 0 && mod < max(1, prefs.periodLength)
+    }
+    private func isFertileDate(_ d: Date) -> Bool {
+        guard prefs.isWoman else { return false }
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: prefs.lastPeriodStart)
+        let day = cal.startOfDay(for: d)
+        let diff = cal.dateComponents([.day], from: start, to: day).day ?? 0
+        let cycle = max(1, prefs.cycleLength)
+        let mod = ((diff % cycle) + cycle) % cycle
+        return (10...15).contains(mod)
+    }
+}
+
+// MARK: - Year Overview
+
+private struct YearOverviewView: View {
+    @EnvironmentObject private var prefs: PreferencesStore
+    @Environment(\.dismiss) private var dismiss
+    @State var year: Int
+    let selectedMonth: Date
+    let onSelect: (Date) -> Void
+
+    init(initialYear: Int, selectedMonth: Date, onSelect: @escaping (Date) -> Void) {
+        _year = State(initialValue: initialYear)
+        self.selectedMonth = selectedMonth
+        self.onSelect = onSelect
+    }
+
+    private var months: [Date] {
+        let cal = Calendar.current
+        let jan = cal.date(from: DateComponents(year: year, month: 1, day: 1))!
+        return (0..<12).compactMap { cal.date(byAdding: .month, value: $0, to: jan) }
+    }
+
+    private let cols = Array(repeating: GridItem(.flexible(), spacing: 12), count: 3)
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVGrid(columns: cols, spacing: 18) {
+                    ForEach(months, id: \.self) { m in
+                        Button { onSelect(m) } label: {
+                            MonthMiniGrid(monthStart: m)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .stroke(highlight(for: m), lineWidth: 2)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(16)
+            }
+            .navigationTitle(String(year))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button { year -= 1 } label: { Image(systemName: "chevron.left") }
+                }
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    Button { year += 1 } label: { Image(systemName: "chevron.right") }
+                    Button { dismiss() } label: { Image(systemName: "xmark") }
+                }
+            }
+        }
+    }
+
+    private func highlight(for m: Date) -> Color {
+        let cal = Calendar.current
+        let a = cal.startOfMonth(for: m)
+        let b = cal.startOfMonth(for: selectedMonth)
+        return a == b ? prefs.theme.accent(for: prefs.tone) : Color.clear
+    }
+}
+
+private struct MonthMiniGrid: View {
+    @EnvironmentObject private var prefs: PreferencesStore
+    let monthStart: Date
+    private var calendar: Calendar { var c = Calendar(identifier: .gregorian); c.locale = Locale(identifier: "es_ES"); c.firstWeekday = 1; return c }
+    private var title: String { let df = DateFormatter(); df.locale = calendar.locale; df.dateFormat = "LLL"; return df.string(from: monthStart).capitalized }
+    private var daysInMonth: Int { calendar.range(of: .day, in: .month, for: monthStart)!.count }
+    private var startWeekdayOffset: Int { let w = calendar.component(.weekday, from: monthStart); return (w - calendar.firstWeekday + 7) % 7 }
+    private var totalCells: Int { let rows = Int(ceil(Double(startWeekdayOffset + daysInMonth) / 7.0)); return rows * 7 }
+    private let columns = Array(repeating: GridItem(.flexible(minimum: 12), spacing: 2), count: 7)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.system(.headline, design: .serif).weight(.semibold)).appItalic(prefs.useItalic)
+            LazyVGrid(columns: columns, spacing: 2) {
+                ForEach(0..<totalCells, id: \.self) { idx in
+                    let day = idx - startWeekdayOffset + 1
+                    if day >= 1 && day <= daysInMonth {
+                        Text(String(day))
+                            .font(.system(size: 10, weight: .semibold))
+                            .monospacedDigit()
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
+                            .frame(maxWidth: .infinity)
+                            .foregroundStyle(.primary)
+                    } else {
+                        Text("")
+                            .font(.system(size: 10))
+                            .frame(maxWidth: .infinity)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, minHeight: 148, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(prefs.theme.surface(for: prefs.tone))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(prefs.theme.stroke(for: prefs.tone), lineWidth: 1)
+        )
+    }
+}
+
+// MARK: - Calendar helpers
+private extension Calendar {
+    func startOfMonth(for date: Date) -> Date {
+        let c = dateComponents([.year, .month], from: date)
+        return self.date(from: c) ?? date
+    }
+}
+
+// MARK: - Text Note Editor (for Agenda integration)
+
+private struct AgendaTextNoteEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var prefs: PreferencesStore
+    let date: Date
+    var initialText: String = ""
+    var initialReminder: Date? = nil
+    var initialCategory: NoteCategory = .personal
+    var initialDate: Date = Date()
+    var allowDateChange: Bool = true
+    let onSave: (Date, String, NoteCategory, Bool, Date?) -> Void
+    let onDelete: () -> Void
+
+    @State private var text: String = ""
+    @State private var category: NoteCategory = .personal
+    @State private var notify: Bool = false
+    @State private var notifyDate: Date = Date().addingTimeInterval(3600)
+    @State private var noteDate: Date = Date()
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if allowDateChange {
+                    Section(header: Text("Día")) {
+                        DatePicker("Día", selection: $noteDate, displayedComponents: .date)
+                    }
+                }
+                Section(header: Text("Nota")) {
+                    TextEditor(text: $text).frame(minHeight: 160)
+                }
+                Section(header: Text("Categoría")) {
+                    Picker("Categoría", selection: $category) {
+                        ForEach(NoteCategory.allCases) { c in Text(c.displayName).tag(c) }
+                    }
+                }
+                Section(header: Text("Recordatorio")) {
+                    Toggle("Notificar", isOn: $notify)
+                    if notify {
+                        DatePicker("Cuando", selection: $notifyDate, displayedComponents: [.date, .hourAndMinute])
+                    }
+                }
+                if !initialText.isEmpty || initialReminder != nil { // likely editing
+                    Section { Button("Borrar", role: .destructive) { onDelete(); dismiss() } }
+                }
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .navigationTitle("Nota del día")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancelar") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("Guardar") { onSave(noteDate, text, category, notify, notify ? notifyDate : nil); dismiss() }.disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
+            }
+        }
+        .onAppear {
+            text = initialText
+            category = initialCategory
+            if let r = initialReminder { notify = true; notifyDate = r }
+            noteDate = initialDate
+        }
+    }
+}
+
 // MARK: - Weekly Planner
 
 private struct WeeklyPlannerView: View {
@@ -385,7 +1223,25 @@ private struct WeeklyPlannerView: View {
                     .font(.system(.footnote, design: .serif).weight(.semibold)).appItalic(prefs.useItalic)
                     .foregroundStyle(subtle)
             }
-            .padding(.bottom, 2)
+            if prefs.isWoman {
+                HStack(spacing: 6) {
+                    if isPeriodDateWeekly(d) {
+                        Image(systemName: "drop.fill")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(.red)
+                    } else if isFertileDateWeekly(d) {
+                        Circle()
+                            .fill(Color.green.opacity(0.9))
+                            .frame(width: 7, height: 7)
+                    } else if agenda.isPeriodDelayed(on: d) {
+                        Text("🕒")
+                            .font(.system(size: 11))
+                    }
+                }
+                .padding(.leading, 2)
+                .padding(.bottom, 2)
+            }
+            
             // Si hay horas con texto, mostrar 3 entradas más cercanas a la hora actual; si no, mostrar dibujo
             if let hourly = agenda.entry(for: d)?.hourly, !hourly.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
@@ -451,6 +1307,27 @@ private struct WeeklyPlannerView: View {
     private func extraCount(for d: Date, shown: Int) -> Int {
         let total = agenda.entry(for: d)?.hourly?.count ?? 0
         return max(0, total - shown)
+    }
+    // Ciclo: helpers
+    private func isPeriodDateWeekly(_ d: Date) -> Bool {
+        guard prefs.isWoman else { return false }
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: prefs.lastPeriodStart)
+        let day = cal.startOfDay(for: d)
+        let diff = cal.dateComponents([.day], from: start, to: day).day ?? 0
+        let cycle = max(1, prefs.cycleLength)
+        let mod = ((diff % cycle) + cycle) % cycle
+        return mod >= 0 && mod < max(1, prefs.periodLength)
+    }
+    private func isFertileDateWeekly(_ d: Date) -> Bool {
+        guard prefs.isWoman else { return false }
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: prefs.lastPeriodStart)
+        let day = cal.startOfDay(for: d)
+        let diff = cal.dateComponents([.day], from: start, to: day).day ?? 0
+        let cycle = max(1, prefs.cycleLength)
+        let mod = ((diff % cycle) + cycle) % cycle
+        return (10...15).contains(mod)
     }
 
     private var notesBox: some View {
@@ -927,7 +1804,7 @@ private struct GlassSwitcher: View { // (mantained for reference, no longer used
                         .frame(width: segW, height: h)
                 }
             }
-            .frame(height: h)
+            .frame(height: 36)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder((prefs.tone == .white ? Color.black.opacity(0.16) : Color.white.opacity(0.20)), lineWidth: 1))
         }
@@ -1004,3 +1881,4 @@ private struct ModeSwitch: View {
 }
 
 // No extra helpers
+
