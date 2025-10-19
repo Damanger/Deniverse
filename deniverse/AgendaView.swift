@@ -59,8 +59,9 @@ struct AgendaView: View {
                                 return nil
                             },
                             onDayTap: { d in
-                                // Selecciona el día para que "+Nuevo" use esa fecha
+                                // Selecciona el día y abre la hoja de horas para escribir
                                 selectedDate = d
+                                hourPicker = DaySelection(date: d)
                             }
                         )
                         .environmentObject(prefs)
@@ -1881,4 +1882,3 @@ private struct ModeSwitch: View {
 }
 
 // No extra helpers
-
