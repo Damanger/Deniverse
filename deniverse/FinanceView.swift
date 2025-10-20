@@ -47,11 +47,58 @@ struct FinanceView: View {
         }, message: {
             Text("Has superado tu límite diario de gasto.")
         })
-        .popover(isPresented: $showReports) {
-            FinanceReportsView()
-                .environmentObject(prefs)
-                .environmentObject(finance)
-                .frame(minWidth: 360, minHeight: 420)
+        // Modal centrado para Reportes (reemplaza popover)
+        .overlay(alignment: .center) {
+            if showReports {
+                GeometryReader { geo in
+                    let modalW = min(geo.size.width * 0.9, 420)
+                    let modalH = min(geo.size.height * 0.9, 520)
+                    ZStack {
+                        // Scrim
+                        Color.black.opacity(0.35)
+                            .ignoresSafeArea()
+                            .onTapGesture { withAnimation(.easeOut(duration: 0.15)) { showReports = false } }
+
+                        // Card
+                        VStack(spacing: 0) {
+                            HStack {
+                                Spacer()
+                                Button {
+                                    withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) { showReports = false }
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 20, weight: .semibold))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(.top, 8)
+                            .padding(.trailing, 8)
+
+                            // Content area (scroll if small screens)
+                            ScrollView {
+                                FinanceReportsView()
+                                    .environmentObject(prefs)
+                                    .environmentObject(finance)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(12)
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
+                        .frame(width: modalW, height: modalH)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(.ultraThinMaterial)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .stroke(appStroke, lineWidth: 1)
+                        )
+                        .shadow(color: .black.opacity(0.25), radius: 20, y: 8)
+                        .transition(.scale(scale: 0.98).combined(with: .opacity))
+                    }
+                }
+                .zIndex(10)
+            }
         }
     }
 

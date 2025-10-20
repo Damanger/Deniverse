@@ -1402,15 +1402,33 @@ private struct DayHoursSheet: View {
     // Modo de intercambio por selección (sin drag & drop)
     @State private var swapMode: Bool = false
     @State private var selectedForSwap: Set<Int> = []
+    // Organización de filas (60/30/15 min)
+    enum SlotDuration: Int, CaseIterable { case h60 = 60, m30 = 30, m15 = 15
+        var title: String { switch self { case .h60: return "Cada hora"; case .m30: return "Cada 30 min"; case .m15: return "Cada 15 min" } }
+    }
+    @State private var slotDuration: SlotDuration = .h60
+    @State private var showOrganizeDialog: Bool = false
 
     private var hours: [Int] { Array(prefs.agendaStartHour...prefs.agendaEndHour) }
+    private struct TimeSlot: Identifiable { let hour: Int; let minute: Int; var id: String { String(format: "%02d:%02d", hour, minute) } }
+    private var timeSlots: [TimeSlot] {
+        var out: [TimeSlot] = []
+        let minutes: [Int]
+        switch slotDuration {
+        case .h60: minutes = [0]
+        case .m30: minutes = [0,30]
+        case .m15: minutes = [0,15,30,45]
+        }
+        for h in hours { for m in minutes { out.append(TimeSlot(hour: h, minute: m)) } }
+        return out
+    }
 
     var body: some View {
         NavigationStack {
             List {
                 Section(header: Text(dateHeader)) {
-                    ForEach(hours, id: \.self) { h in
-                        hourRow(for: h)
+                    ForEach(timeSlots) { slot in
+                        slotRow(for: slot)
                     }
                 }
             }
@@ -1418,10 +1436,19 @@ private struct DayHoursSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cerrar") { dismiss() } }
                 ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Organizar por") { showOrganizeDialog = true }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button(swapMode ? "Cancelar" : "Intercambiar") {
                         withAnimation { swapMode.toggle(); selectedForSwap.removeAll() }
                     }
                 }
+            }
+            .confirmationDialog("Organizar por", isPresented: $showOrganizeDialog, titleVisibility: .visible) {
+                Button(SlotDuration.h60.title) { withAnimation(.easeInOut(duration: 0.15)) { slotDuration = .h60 } }
+                Button(SlotDuration.m30.title) { withAnimation(.easeInOut(duration: 0.15)) { slotDuration = .m30 } }
+                Button(SlotDuration.m15.title) { withAnimation(.easeInOut(duration: 0.15)) { slotDuration = .m15 } }
+                Button("Cancelar", role: .cancel) {}
             }
             .sheet(isPresented: Binding(get: { selectedHourForEdit != nil }, set: { if !$0 { selectedHourForEdit = nil } })) {
                 if let h = selectedHourForEdit {
@@ -1461,6 +1488,32 @@ private struct DayHoursSheet: View {
         .onTapGesture {
             guard swapMode else { return }
             toggleSelection(hour: h)
+            if selectedForSwap.count == 2 { performSwap() }
+        }
+    }
+
+    @ViewBuilder
+    private func slotRow(for slot: TimeSlot) -> some View {
+        HStack {
+            Text(String(format: "%02d:%02d", slot.hour, slot.minute))
+                .font(.subheadline.weight(.semibold))
+            Spacer()
+            Text(agenda.hourlyText(on: date, hour: slot.hour) ?? "")
+                .lineLimit(1)
+                .foregroundStyle(.secondary)
+            Button { selectedHourForEdit = slot.hour } label: { Image(systemName: "square.and.pencil") }
+                .buttonStyle(.plain)
+                .padding(.leading, 6)
+        }
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill( selectedForSwap.contains(slot.hour) ? Color.accentColor.opacity(0.18) : Color.clear )
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard swapMode else { return }
+            toggleSelection(hour: slot.hour)
             if selectedForSwap.count == 2 { performSwap() }
         }
     }

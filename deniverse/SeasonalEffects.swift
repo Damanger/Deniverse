@@ -4,7 +4,7 @@ import Combine
 // Date-based seasonal themes and lightweight overlays
 
 enum SeasonalEffect: CaseIterable {
-    case spiderWeb, spider, lightning
+    case spiderWeb, spider, lightning, love
 
     static func random() -> SeasonalEffect { allCases.randomElement() ?? .spiderWeb }
 }
@@ -14,20 +14,36 @@ enum SeasonalCalendarTheme {
     static func isDiaDeMuertosActive(on date: Date = Date()) -> Bool {
         let cal = Calendar.current
         let y = cal.component(.year, from: date)
-        let oct20 = cal.date(from: DateComponents(year: y, month: 10, day: 20))!
+        let oct21 = cal.date(from: DateComponents(year: y, month: 10, day: 21))!
         let nov05 = cal.date(from: DateComponents(year: y, month: 11, day: 5))!
-        return (date >= oct20 && date <= nov05)
+        return (date >= oct21 && date <= nov05)
+    }
+
+    // Amor: día 20 de cada mes
+    static func isLoveDay(on date: Date = Date()) -> Bool {
+        let cal = Calendar.current
+        let comps = cal.dateComponents([.day], from: date)
+        return comps.day == 20
     }
 }
 
 final class SeasonalEffectPicker {
     static var chosenForSession: SeasonalEffect?
     static func pick(for date: Date = Date()) -> SeasonalEffect? {
-        guard SeasonalCalendarTheme.isDiaDeMuertosActive(on: date) else { return nil }
-        if let c = chosenForSession { return c }
-        let c = SeasonalEffect.random()
-        chosenForSession = c
-        return c
+        // 1) Amor el día 20 de cada mes (siempre)
+        if SeasonalCalendarTheme.isLoveDay(on: date) {
+            return .love
+        }
+        // 2) Efectos temáticos (ej: Día de Muertos) en ventana específica
+        if SeasonalCalendarTheme.isDiaDeMuertosActive(on: date) {
+            if let c = chosenForSession, c != .love { return c }
+            let pool: [SeasonalEffect] = [.spiderWeb, .spider, .lightning]
+            let c = pool.randomElement() ?? .spiderWeb
+            chosenForSession = c
+            return c
+        }
+        // 3) Nada fuera de las fechas especiales
+        return nil
     }
 }
 
@@ -43,6 +59,7 @@ struct SeasonalOverlay: View {
                     SpiderSceneOverlay()
                 }
             case .lightning: LightningOverlay()
+            case .love: LoveOverlay() // corazones y emojis románticos el día 20
             }
         }
         .allowsHitTesting(false)
@@ -378,5 +395,92 @@ private struct LightningOverlay: View {
             out.append(Bolt(points: pts, width: width))
         }
         return out
+    }
+}
+
+// MARK: - Love day (20th of each month) hearts + emojis
+final class LoveConfettiModel: ObservableObject {
+    struct Item: Identifiable { let id = UUID(); var x: CGFloat; var y: CGFloat; var vx: CGFloat; var vy: CGFloat; var size: CGFloat; var rot: CGFloat }
+    @Published var items: [Item] = []
+    private var timer: Timer?
+    private var area: CGSize = .zero
+    private let symbols: [String] = {
+        // Predominantly hearts; sprinkle in a few romance emojis
+        let hearts = Array(repeating: ["💖","💕","💗","💘","💞","💓","💝","💟"], count: 6).flatMap { $0 }
+        let extras = ["💌","😍","😘","🥰","✨"]
+        return hearts + extras
+    }()
+
+    deinit { timer?.invalidate() }
+
+    func configure(size: CGSize, count: Int = 68) {
+        area = size
+        if items.isEmpty {
+            let w = size.width, h = size.height
+            items = (0..<count).map { _ in
+                let x = CGFloat.random(in: 0...w)
+                let y = CGFloat.random(in: 0...h)
+                let vy = -CGFloat.random(in: 12...28) / 30.0 // upward px/frame
+                let vx = CGFloat.random(in: -6...6) / 30.0
+                let s = CGFloat.random(in: 18...36)
+                return Item(x: x, y: y, vx: vx, vy: vy, size: s, rot: CGFloat.random(in: -(.pi)...(.pi)))
+            }
+            start()
+        } else {
+            // Clamp to new size on rotation/resize
+            items.indices.forEach { i in
+                items[i].x = min(max(0, items[i].x), size.width)
+                items[i].y = min(max(0, items[i].y), size.height)
+            }
+        }
+    }
+
+    private func start() {
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: 1/30, repeats: true) { [weak self] _ in self?.tick() }
+    }
+
+    private func tick() {
+        let w = area.width, h = area.height
+        guard w > 0 && h > 0 else { return }
+        for i in items.indices {
+            items[i].x += items[i].vx
+            items[i].y += items[i].vy
+            items[i].rot += 0.01 * (items[i].vx >= 0 ? 1 : -1)
+            // Gentle sway
+            items[i].x += sin(items[i].y * 0.03) * 0.3
+            // Re-spawn at bottom when floating past top or off-sides
+            if items[i].y < -40 || items[i].x < -40 || items[i].x > w + 40 {
+                items[i].x = CGFloat.random(in: 0...w)
+                items[i].y = h + CGFloat.random(in: 10...80)
+                items[i].vx = CGFloat.random(in: -6...6) / 30.0
+                items[i].vy = -CGFloat.random(in: 12...28) / 30.0
+                items[i].size = CGFloat.random(in: 18...36)
+            }
+        }
+    }
+
+    func symbol(for index: Int) -> String { symbols[index % symbols.count] }
+}
+
+private struct LoveOverlay: View {
+    @StateObject private var model = LoveConfettiModel()
+    var body: some View {
+        GeometryReader { geo in
+            Canvas { ctx, size in
+                // Subtle bloom layer
+                ctx.addFilter(.blur(radius: 0))
+                for (idx, item) in model.items.enumerated() {
+                    let sym = model.symbol(for: idx)
+                    let t = Text(sym).font(.system(size: item.size))
+                    ctx.draw(t, at: CGPoint(x: item.x, y: item.y), anchor: .center)
+                }
+            }
+            .onAppear { model.configure(size: geo.size) }
+            .onChange(of: geo.size) { _, new in model.configure(size: new) }
+        }
+        .allowsHitTesting(false)
+        .opacity(0.9)
+        .blendMode(.plusLighter)
     }
 }
