@@ -47,57 +47,34 @@ struct FinanceView: View {
         }, message: {
             Text("Has superado tu límite diario de gasto.")
         })
-        // Modal centrado para Reportes (reemplaza popover)
-        .overlay(alignment: .center) {
-            if showReports {
-                GeometryReader { geo in
-                    let modalW = min(geo.size.width * 0.9, 420)
-                    let modalH = min(geo.size.height * 0.9, 520)
-                    ZStack {
-                        // Scrim
-                        Color.black.opacity(0.35)
-                            .ignoresSafeArea()
-                            .onTapGesture { withAnimation(.easeOut(duration: 0.15)) { showReports = false } }
-
-                        // Card
-                        VStack(spacing: 0) {
-                            HStack {
-                                Spacer()
-                                Button {
-                                    withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) { showReports = false }
-                                } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .font(.system(size: 20, weight: .semibold))
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            .padding(.top, 8)
-                            .padding(.trailing, 8)
-
-                            // Content area (scroll if small screens)
-                            ScrollView {
-                                FinanceReportsView()
-                                    .environmentObject(prefs)
-                                    .environmentObject(finance)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(12)
-                            }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Reportes a pantalla completa con barra para cerrar
+        .fullScreenCover(isPresented: $showReports) {
+            NavigationStack {
+                ScrollView {
+                    VStack(spacing: 16) {
+                        FinanceReportsView()
+                            .environmentObject(prefs)
+                            .environmentObject(finance)
+                    }
+                    .padding(16)
+                }
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button(action: { withAnimation(.easeOut(duration: 0.15)) { showReports = false } }) {
+                            Image(systemName: "chevron.left")
                         }
-                        .frame(width: modalW, height: modalH)
-                        .background(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .fill(.ultraThinMaterial)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .stroke(appStroke, lineWidth: 1)
-                        )
-                        .shadow(color: .black.opacity(0.25), radius: 20, y: 8)
-                        .transition(.scale(scale: 0.98).combined(with: .opacity))
+                    }
+                    ToolbarItem(placement: .principal) {
+                        Text("Reportes")
+                            .font(.headline)
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button(action: { withAnimation(.easeOut(duration: 0.15)) { showReports = false } }) {
+                            Image(systemName: "xmark")
+                        }
                     }
                 }
-                .zIndex(10)
             }
         }
     }
@@ -602,6 +579,35 @@ private struct FinanceReportsView: View {
                 legendItem(color: .red, title: "Gastos", value: prefs.currencyString(expense))
             }
             .font(.footnote)
+
+            Divider().padding(.vertical, 2)
+
+            // Extra estadísticas del mes
+            let txs = monthTransactions(for: monthStart)
+            let highlights = monthHighlights(for: monthStart)
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Estadísticas")
+                    .font(.headline)
+
+                // Resumen rápido
+                HStack(spacing: 12) {
+                    quickStat(title: "Transacciones", value: String(txs.count), color: .blue)
+                    quickStat(title: "Días activos", value: String(highlights.activeDays), color: .purple)
+                    quickStat(title: "Balance", value: prefs.currencyString(income - expense), color: (income - expense) >= 0 ? .green : .red)
+                }
+
+                // Detalles
+                VStack(alignment: .leading, spacing: 8) {
+                    statRow(system: "cart.fill", title: "Categoría con más gasto", value: highlights.topExpenseCategory != nil ? "\(highlights.topExpenseCategory!.cat.title) · \(prefs.currencyString(highlights.topExpenseCategory!.amount))" : "—")
+                    statRow(system: "arrow.down.circle.fill", title: "Mayor gasto (movimiento)", value: highlights.biggestExpense != nil ? "\(highlights.biggestExpense!.title) · \(prefs.currencyString(abs(highlights.biggestExpense!.amount)))" : "—")
+                    statRow(system: "calendar", title: "Día con mayor gasto", value: highlights.maxExpenseDay != nil ? "\(dateFull(highlights.maxExpenseDay!.day)) · \(prefs.currencyString(abs(highlights.maxExpenseDay!.amount)))" : "—")
+                    statRow(system: "arrow.up.circle.fill", title: "Mayor ingreso (movimiento)", value: highlights.biggestIncome != nil ? "\(highlights.biggestIncome!.title) · \(prefs.currencyString(highlights.biggestIncome!.amount))" : "—")
+                    statRow(system: "calendar", title: "Día con mayor ingreso", value: highlights.maxIncomeDay != nil ? "\(dateFull(highlights.maxIncomeDay!.day)) · \(prefs.currencyString(highlights.maxIncomeDay!.amount))" : "—")
+                }
+                .font(.footnote)
+            }
+
             Spacer(minLength: 0)
         }
         .padding(16)
@@ -612,6 +618,37 @@ private struct FinanceReportsView: View {
     }
 
     // MARK: - Data helpers
+    private func monthTransactions(for start: Date) -> [Transaction] {
+        let cal = Calendar.current
+        let comps = cal.dateComponents([.year, .month], from: start)
+        let ms = cal.date(from: comps) ?? start
+        return finance.transactions.filter { cal.component(.year, from: $0.date) == cal.component(.year, from: ms) && cal.component(.month, from: $0.date) == cal.component(.month, from: ms) }
+    }
+
+    private func monthHighlights(for start: Date) -> (topExpenseCategory: (cat: FinanceCategory, amount: Double)?, maxExpenseDay: (day: Date, amount: Double)?, maxIncomeDay: (day: Date, amount: Double)?, biggestExpense: Transaction?, biggestIncome: Transaction?, activeDays: Int) {
+        let cal = Calendar.current
+        let txs = monthTransactions(for: start)
+
+        // Categoría con más gasto
+        let expenseByCat = Dictionary(grouping: txs.filter { $0.amount < 0 }) { $0.category }
+            .mapValues { items in items.map { $0.amount }.reduce(0, +) }
+        let topCat = expenseByCat.min(by: { $0.value < $1.value })
+            .map { (cat: $0.key, amount: abs($0.value)) }
+
+        // Agrupación por día
+        let groups = Dictionary(grouping: txs) { cal.startOfDay(for: $0.date) }
+        let dayIncome = groups.mapValues { $0.filter { $0.amount > 0 }.map { $0.amount }.reduce(0, +) }
+        let dayExpense = groups.mapValues { $0.filter { $0.amount < 0 }.map { $0.amount }.reduce(0, +) }
+        let maxIncomeDay = dayIncome.max(by: { $0.value < $1.value }).map { (day: $0.key, amount: $0.value) }
+        let maxExpenseDay = dayExpense.min(by: { $0.value < $1.value }).map { (day: $0.key, amount: $0.value) }
+
+        // Movimientos individuales más grandes
+        let biggestIncome = txs.filter { $0.amount > 0 }.max(by: { $0.amount < $1.amount })
+        let biggestExpense = txs.filter { $0.amount < 0 }.min(by: { $0.amount < $1.amount })
+
+        let activeDays = groups.keys.count
+        return (topCat, maxExpenseDay, maxIncomeDay, biggestExpense, biggestIncome, activeDays)
+    }
     private func monthSummary(for start: Date) -> (income: Double, expense: Double) {
         let cal = Calendar.current
         let comps = cal.dateComponents([.year, .month], from: start)
@@ -629,6 +666,10 @@ private struct FinanceReportsView: View {
         return s.prefix(1).uppercased() + s.dropFirst()
     }
 
+    private func dateFull(_ d: Date) -> String {
+        let df = DateFormatter(); df.locale = Locale(identifier: "es_ES"); df.dateStyle = .medium; return df.string(from: d)
+    }
+
     private func legendItem(color: Color, title: String, value: String) -> some View {
         HStack(spacing: 6) {
             Circle().fill(color.opacity(prefs.tone == .white ? 0.25 : 0.35)).frame(width: 12, height: 12)
@@ -638,6 +679,26 @@ private struct FinanceReportsView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // UI helpers
+    private func statRow(system: String, title: String, value: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: system).frame(width: 16)
+            Text(title)
+            Spacer()
+            Text(value).font(.subheadline.weight(.semibold))
+        }
+    }
+
+    private func quickStat(title: String, value: String, color: Color) -> some View {
+        VStack(spacing: 4) {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            Text(value).font(.subheadline.weight(.semibold))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 10).fill(color.opacity(prefs.tone == .white ? 0.14 : 0.20)))
     }
 }
 

@@ -29,6 +29,8 @@ struct DayEntry: Codable {
     var reminder: Date?
     var notes: [NoteItem]? // notas creadas desde Notas
     var hourly: [Int: String]? // clave: hora (0-23)
+    // Sub-horarios por minuto (ej. "06:15" → "Actividad"), usado cuando se organiza por 30/15 min
+    var subhourly: [String: String]? // clave "HH:MM"
     var periodDelayed: Bool? // marca de retraso de ciclo
 }
 
@@ -156,6 +158,27 @@ final class AgendaStore: ObservableObject {
             dict[hour] = trimmed
         }
         e.hourly = dict.isEmpty ? nil : dict
+        entries[k] = e
+        reloadFromDisk()
+        DispatchQueue.main.async { self.objectWillChange.send() }
+    }
+
+    // MARK: - Subhourly (15/30 min) notes
+    private func subKey(hour: Int, minute: Int) -> String { String(format: "%02d:%02d", hour, minute) }
+
+    func subhourlyText(on date: Date, hour: Int, minute: Int) -> String? {
+        let k = key(for: date)
+        return entries[k]?.subhourly?[subKey(hour: hour, minute: minute)]
+    }
+
+    func setSubhourly(on date: Date, hour: Int, minute: Int, text: String?) {
+        let k = key(for: date)
+        var e = entries[k] ?? DayEntry()
+        var dict = e.subhourly ?? [:]
+        let trimmed = (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let sk = subKey(hour: hour, minute: minute)
+        if trimmed.isEmpty { dict.removeValue(forKey: sk) } else { dict[sk] = trimmed }
+        e.subhourly = dict.isEmpty ? nil : dict
         entries[k] = e
         reloadFromDisk()
         DispatchQueue.main.async { self.objectWillChange.send() }

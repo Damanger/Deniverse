@@ -131,6 +131,7 @@ private struct PreferencesDTO: Codable {
     var agendaStartHour: Int?
     var agendaEndHour: Int?
     var lastCycleAlertDayKey: String?
+    var agendaSlotMinutes: Int?
 }
 
 final class PreferencesStore: ObservableObject {
@@ -151,6 +152,7 @@ final class PreferencesStore: ObservableObject {
     @Published var agendaStartHour: Int { didSet { save() } }
     @Published var agendaEndHour: Int { didSet { save() } }
     @Published var lastCycleAlertDayKey: String? { didSet { save() } }
+    @Published var agendaSlotMinutes: Int { didSet { save() } }
 
     private let url: URL
     private var loading = false
@@ -175,6 +177,7 @@ final class PreferencesStore: ObservableObject {
         self.agendaStartHour = 6
         self.agendaEndHour = 21
         self.lastCycleAlertDayKey = nil
+        self.agendaSlotMinutes = 60
         load()
     }
 
@@ -199,6 +202,7 @@ final class PreferencesStore: ObservableObject {
             if let sh = dto.agendaStartHour { self.agendaStartHour = sh }
             if let eh = dto.agendaEndHour { self.agendaEndHour = eh }
             self.lastCycleAlertDayKey = dto.lastCycleAlertDayKey
+            if let sm = dto.agendaSlotMinutes { self.agendaSlotMinutes = sm }
         }
     }
 
@@ -220,7 +224,8 @@ final class PreferencesStore: ObservableObject {
             dailySpendLimit: dailySpendLimit,
             agendaStartHour: agendaStartHour,
             agendaEndHour: agendaEndHour,
-            lastCycleAlertDayKey: lastCycleAlertDayKey
+            lastCycleAlertDayKey: lastCycleAlertDayKey,
+            agendaSlotMinutes: agendaSlotMinutes
         )
         do {
             let data = try JSONEncoder.pretty.encode(dto)

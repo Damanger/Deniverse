@@ -1398,7 +1398,7 @@ private struct DayHoursSheet: View {
     @Environment(\.dismiss) private var dismiss
     let date: Date
     @State private var activeHour: Int? = nil
-    @State private var selectedHourForEdit: Int? = nil
+    @State private var selectedSlotForEdit: TimeSlot? = nil
     // Modo de intercambio por selección (sin drag & drop)
     @State private var swapMode: Bool = false
     @State private var selectedForSwap: Set<Int> = []
@@ -1427,8 +1427,14 @@ private struct DayHoursSheet: View {
         NavigationStack {
             List {
                 Section(header: Text(dateHeader)) {
-                    ForEach(timeSlots) { slot in
-                        slotRow(for: slot)
+                    if slotDuration == .h60 {
+                        ForEach(hours, id: \.self) { h in
+                            hourRow(for: h)
+                        }
+                    } else {
+                        ForEach(timeSlots) { slot in
+                            slotRow(for: slot)
+                        }
                     }
                 }
             }
@@ -1444,16 +1450,24 @@ private struct DayHoursSheet: View {
                     }
                 }
             }
+            .onAppear {
+                // Recordar selección anterior desde preferencias
+                if let remembered = SlotDuration(rawValue: prefs.agendaSlotMinutes) { slotDuration = remembered }
+            }
+            .onChange(of: slotDuration) { _, newVal in
+                // Persistir selección
+                prefs.agendaSlotMinutes = newVal.rawValue
+            }
             .confirmationDialog("Organizar por", isPresented: $showOrganizeDialog, titleVisibility: .visible) {
                 Button(SlotDuration.h60.title) { withAnimation(.easeInOut(duration: 0.15)) { slotDuration = .h60 } }
                 Button(SlotDuration.m30.title) { withAnimation(.easeInOut(duration: 0.15)) { slotDuration = .m30 } }
                 Button(SlotDuration.m15.title) { withAnimation(.easeInOut(duration: 0.15)) { slotDuration = .m15 } }
                 Button("Cancelar", role: .cancel) {}
             }
-            .sheet(isPresented: Binding(get: { selectedHourForEdit != nil }, set: { if !$0 { selectedHourForEdit = nil } })) {
-                if let h = selectedHourForEdit {
+            .sheet(isPresented: Binding(get: { selectedSlotForEdit != nil }, set: { if !$0 { selectedSlotForEdit = nil } })) {
+                if let s = selectedSlotForEdit {
                     NavigationStack {
-                        HourEntryEditor(date: date, hour: h)
+                        HourEntryEditor(date: date, hour: s.hour, minute: (slotDuration == .h60 ? nil : s.minute))
                             .environmentObject(prefs)
                             .environmentObject(agenda)
                     }
@@ -1468,11 +1482,18 @@ private struct DayHoursSheet: View {
             Text(String(format: "%02d:00", h))
                 .font(.subheadline.weight(.semibold))
             Spacer()
-            Text(agenda.hourlyText(on: date, hour: h) ?? "")
+            let baseText = (agenda.hourlyText(on: date, hour: h) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let subCount = subslotCount(for: h)
+            let summary: String = {
+                if subCount <= 0 { return baseText }
+                let suffix = subCount == 1 ? "actividad" : "actividades"
+                return baseText.isEmpty ? "• \(subCount) \(suffix)" : "\(baseText) • \(subCount) \(suffix)"
+            }()
+            Text(summary)
                 .lineLimit(1)
                 .foregroundStyle(.secondary)
             Button {
-                selectedHourForEdit = h
+                selectedSlotForEdit = TimeSlot(hour: h, minute: 0)
             } label: {
                 Image(systemName: "square.and.pencil")
             }
@@ -1492,16 +1513,38 @@ private struct DayHoursSheet: View {
         }
     }
 
+    private func subslotCount(for hour: Int) -> Int {
+        let dict = agenda.entry(for: date)?.subhourly ?? [:]
+        let prefix = String(format: "%02d:", hour)
+        let count = dict.reduce(0) { acc, kv in
+            let (_, v) = kv
+            let ok = kv.key.hasPrefix(prefix) && !(v.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            return acc + (ok ? 1 : 0)
+        }
+        return count
+    }
+
     @ViewBuilder
     private func slotRow(for slot: TimeSlot) -> some View {
         HStack {
             Text(String(format: "%02d:%02d", slot.hour, slot.minute))
                 .font(.subheadline.weight(.semibold))
             Spacer()
-            Text(agenda.hourlyText(on: date, hour: slot.hour) ?? "")
+            let displayText: String? = {
+                switch slotDuration {
+                case .h60:
+                    return agenda.hourlyText(on: date, hour: slot.hour)
+                case .m30, .m15:
+                    // Solo mostrar el texto del sub-slot. Si no hay y existe texto horario, muéstralo sólo en :00
+                    if let sub = agenda.subhourlyText(on: date, hour: slot.hour, minute: slot.minute) { return sub }
+                    if slot.minute == 0 { return agenda.hourlyText(on: date, hour: slot.hour) }
+                    return nil
+                }
+            }()
+            Text(displayText ?? "")
                 .lineLimit(1)
                 .foregroundStyle(.secondary)
-            Button { selectedHourForEdit = slot.hour } label: { Image(systemName: "square.and.pencil") }
+            Button { selectedSlotForEdit = slot } label: { Image(systemName: "square.and.pencil") }
                 .buttonStyle(.plain)
                 .padding(.leading, 6)
         }
@@ -1575,6 +1618,7 @@ private struct HourEntryEditor: View {
     @Environment(\.dismiss) private var dismiss
     let date: Date
     let hour: Int
+    let minute: Int?
     @State private var text: String = ""
 
     var body: some View {
@@ -1583,10 +1627,11 @@ private struct HourEntryEditor: View {
                 TextField("Escribe aquí...", text: $text, axis: .vertical)
                     .lineLimit(3...8)
             }
-            if !(agenda.hourlyText(on: date, hour: hour) ?? "").isEmpty {
+            if existingText != nil && !(existingText ?? "").isEmpty {
                 Section {
                     Button("Borrar", role: .destructive) {
-                        agenda.setHourly(on: date, hour: hour, text: nil)
+                        if let m = minute { agenda.setSubhourly(on: date, hour: hour, minute: m, text: nil) }
+                        else { agenda.setHourly(on: date, hour: hour, text: nil) }
                         dismiss()
                     }
                 }
@@ -1596,12 +1641,26 @@ private struct HourEntryEditor: View {
         .navigationTitle("Editar hora")
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Cancelar") { dismiss() } }
-            ToolbarItem(placement: .confirmationAction) { Button("Guardar") { agenda.setHourly(on: date, hour: hour, text: text); dismiss() } }
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Guardar") {
+                    if let m = minute { agenda.setSubhourly(on: date, hour: hour, minute: m, text: text) }
+                    else { agenda.setHourly(on: date, hour: hour, text: text) }
+                    dismiss()
+                }
+            }
         }
-        .onAppear { text = agenda.hourlyText(on: date, hour: hour) ?? "" }
+        .onAppear { text = existingText ?? "" }
     }
 
-    private var header: String { String(format: "%@ · %02d:00", dateShort, hour) }
+    private var existingText: String? {
+        if let m = minute { return agenda.subhourlyText(on: date, hour: hour, minute: m) }
+        return agenda.hourlyText(on: date, hour: hour)
+    }
+
+    private var header: String {
+        if let m = minute { return String(format: "%@ · %02d:%02d", dateShort, hour, m) }
+        return String(format: "%@ · %02d:00", dateShort, hour)
+    }
     private var dateShort: String { let df = DateFormatter(); df.locale = Locale(identifier: "es_ES"); df.dateFormat = "EEE d MMM"; return df.string(from: date) }
 }
 
